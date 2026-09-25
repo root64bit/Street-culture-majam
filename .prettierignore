@@ -1,0 +1,11 @@
+node_modules
+.next
+dist
+build
+coverage
+.supabase
+public
+*.min.js
+*.min.css
+pnpm-lock.yaml
+src/types/database.types.ts
