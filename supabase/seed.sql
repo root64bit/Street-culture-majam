@@ -35,9 +35,9 @@ ON CONFLICT (id) DO NOTHING;
 -- 3. COMMISSION RULES SEED
 INSERT INTO public.commission_rules (id, name, seller_type, percentage, fixed_fee, minimum_fee, active)
 VALUES
-    ('r0000000-0000-0000-0000-000000000001', 'Standard Seller Protocol', 'STANDARD', 12.00, 5.00, 10.00, true),
-    ('r0000000-0000-0000-0000-000000000002', 'Verified VIP Consignor', 'VIP', 8.00, 3.00, 6.00, true),
-    ('r0000000-0000-0000-0000-000000000003', 'Enterprise Liquidity Partner', 'ENTERPRISE', 5.00, 0.00, 5.00, true)
+    ('a0000000-0000-0000-0000-000000000001', 'Standard Seller Protocol', 'STANDARD', 12.00, 5.00, 10.00, true),
+    ('a0000000-0000-0000-0000-000000000002', 'Verified VIP Consignor', 'VIP', 8.00, 3.00, 6.00, true),
+    ('a0000000-0000-0000-0000-000000000003', 'Enterprise Liquidity Partner', 'ENTERPRISE', 5.00, 0.00, 5.00, true)
 ON CONFLICT (id) DO NOTHING;
 
 -- 4. PRODUCTS (SAMPLE ARCHIVAL SPECIMENS)
