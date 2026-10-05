@@ -1,13 +1,18 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { Header } from '@/components/layout/Header';
-import { TrustStrip } from '@/components/layout/TrustStrip';
 import { Footer } from '@/components/layout/Footer';
+import { CommerceProvider } from '@/features/commerce/CommerceProvider';
+import { CommerceOverlays } from '@/components/commerce/CommerceOverlays';
 
 export const metadata: Metadata = {
-  title: 'STREET CULTURE — Archival Grail Vault & Consignment',
+  title: 'STREET CULTURE — Authenticity is the culture',
   description:
-    'Premium authenticated fashion resale and consignment marketplace for rare sneakers, streetwear, luxury maison garments, and collectibles.',
+    'Curated sneakers, streetwear and luxury. Every item is verified before it reaches you.',
+  icons: {
+    icon: '/brand/street-culture-icon.png',
+    apple: '/brand/street-culture-icon.png',
+  },
 };
 
 export default function RootLayout({
@@ -16,12 +21,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
-      <body className="bg-vault-950 text-vault-50 antialiased min-h-screen flex flex-col selection:bg-acid selection:text-black">
-        <Header />
-        <TrustStrip />
-        <main className="flex-1">{children}</main>
-        <Footer />
+    <html lang="en">
+      <body className="min-h-screen bg-[#fbfaf6] text-black antialiased selection:bg-acid selection:text-black">
+        <CommerceProvider>
+          <Header />
+          <main className="flex-1">{children}</main>
+          <Footer />
+          <CommerceOverlays />
+        </CommerceProvider>
       </body>
     </html>
   );

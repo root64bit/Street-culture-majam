@@ -1,94 +1,51 @@
-import React from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { ArrowLeft, ArrowUpRight } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
-import { Container } from '@/components/ui/Container';
-import { GlassPanel } from '@/components/ui/GlassPanel';
-import { EmptyState } from '@/components/ui/EmptyState';
-import { StatusBadge } from '@/components/ui/StatusBadge';
-import { formatPrice, formatDate } from '@/lib/utils';
-import { ArrowLeft } from 'lucide-react';
+import { readableOrderStatus } from '@/lib/commerce/labels';
+import { formatDate, formatPrice } from '@/lib/utils';
 
 export default async function AccountOrdersPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/auth/sign-in?redirectTo=/account/orders');
 
-  if (!user) {
-    redirect('/auth/sign-in?redirectTo=/account/orders');
-  }
-
-  const { data: orders } = await supabase
-    .from('orders')
-    .select('*, order_items(*)')
+  const { data: orders, error } = await supabase.from('orders')
+    .select('id, order_number, created_at, status, payment_status, fulfillment_status, total_amount, currency, order_items(product_name_snapshot, size_snapshot, quantity)')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false });
+  if (error) throw new Error('Order history is temporarily unavailable.');
 
   return (
-    <div className="py-12 sm:py-16">
-      <Container>
-        <div className="mb-6 flex items-center justify-between">
-          <Link
-            href="/account"
-            className="inline-flex items-center gap-2 text-xs font-mono text-neutral-400 hover:text-white transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span>BACK TO ACCOUNT</span>
-          </Link>
-        </div>
-
-        <div className="mb-8">
-          <span className="text-[10px] font-mono tracking-widest text-acid uppercase block mb-1">
-            PURCHASE HISTORY
-          </span>
-          <h1 className="text-2xl sm:text-3xl font-black uppercase tracking-tight text-white">
-            VAULT ORDERS
-          </h1>
-        </div>
-
-        {!orders || orders.length === 0 ? (
-          <EmptyState
-            title="NO ORDERS FOUND"
-            description="You have not placed any orders from the Street Culture Vault yet."
-            actionText="EXPLORE VAULT RELEASES"
-            actionHref="/new"
-          />
+    <main className="min-h-screen bg-[#fbfaf6] px-4 pb-20 pt-32 text-black sm:px-6 lg:px-10">
+      <div className="mx-auto max-w-5xl">
+        <Link href="/account" className="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-black/45 hover:text-black"><ArrowLeft className="h-4 w-4" /> Back to account</Link>
+        <p className="mt-10 text-[10px] font-bold uppercase tracking-widest text-black/45">Your purchases</p>
+        <h1 className="mt-2 text-5xl font-black tracking-[-0.07em] sm:text-7xl">ORDERS.</h1>
+        {!orders?.length ? (
+          <div className="mt-10 rounded-[2rem] bg-[#efede6] p-8 sm:p-12">
+            <h2 className="text-2xl font-black">No orders yet.</h2>
+            <p className="mt-2 text-sm text-black/55">The edit is ready when you are.</p>
+            <Link href="/new" className="mt-6 inline-flex rounded-full bg-black px-6 py-3 text-xs font-bold uppercase tracking-wider text-white">Shop the edit</Link>
+          </div>
         ) : (
-          <div className="space-y-4">
+          <div className="mt-10 space-y-3">
             {orders.map((order) => (
-              <GlassPanel key={order.id} intensity="medium" className="p-6 border-white/10">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4 mb-4">
-                  <div>
-                    <span className="text-xs font-mono text-neutral-400 block">ORDER ID</span>
-                    <span className="text-sm font-mono font-bold text-white">{order.order_number}</span>
-                  </div>
-                  <div>
-                    <span className="text-xs font-mono text-neutral-400 block">DATE</span>
-                    <span className="text-xs font-mono text-neutral-200">{formatDate(order.created_at)}</span>
-                  </div>
-                  <div>
-                    <span className="text-xs font-mono text-neutral-400 block">TOTAL AMOUNT</span>
-                    <span className="text-sm font-mono font-bold text-acid">{formatPrice(order.total_amount, order.currency)}</span>
-                  </div>
-                  <div>
-                    <StatusBadge status={order.status} />
-                  </div>
+              <Link key={order.id} href={`/account/orders/${order.id}`} className="group grid gap-4 rounded-[1.5rem] bg-white p-5 shadow-sm transition hover:shadow-md sm:grid-cols-[1fr_auto] sm:p-7">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-black/40">{formatDate(order.created_at)} · {order.order_number}</p>
+                  <h2 className="mt-2 text-lg font-black">{order.order_items.map((item) => item.product_name_snapshot).join(', ') || 'Order'}</h2>
+                  <p className="mt-2 text-xs text-black/50">{order.order_items.length} {order.order_items.length === 1 ? 'piece' : 'pieces'} · {readableOrderStatus(order.status, order.payment_status)} · {order.fulfillment_status === 'UNFULFILLED' ? 'Preparing' : order.fulfillment_status.replaceAll('_', ' ').toLowerCase()}</p>
                 </div>
-
-                <div className="text-right">
-                  <Link
-                    href={`/account/orders/${order.id}`}
-                    className="text-xs font-mono text-acid hover:underline"
-                  >
-                    VIEW ORDER DETAILS →
-                  </Link>
+                <div className="flex items-end justify-between gap-4 sm:flex-col sm:items-end">
+                  <strong className="text-lg">{formatPrice(Number(order.total_amount), order.currency)}</strong>
+                  <ArrowUpRight className="h-5 w-5 transition group-hover:-translate-y-1 group-hover:translate-x-1" />
                 </div>
-              </GlassPanel>
+              </Link>
             ))}
           </div>
         )}
-      </Container>
-    </div>
+      </div>
+    </main>
   );
 }

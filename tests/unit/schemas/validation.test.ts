@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { signInSchema, signUpSchema } from '@/lib/schemas/auth.schema';
 import { consignmentSubmissionSchema } from '@/lib/schemas/consignment.schema';
 import { offerSchema } from '@/lib/schemas/marketplace.schema';
+import { inventoryDraftSchema } from '@/lib/schemas/admin-inventory.schema';
 
 describe('Zod Validation Schemas', () => {
   it('validates sign in credentials correctly', () => {
@@ -71,5 +72,13 @@ describe('Zod Validation Schemas', () => {
       currency: 'USD',
     });
     expect(invalid.success).toBe(false);
+  });
+
+  it('accepts only one-of-one inventory draft details priced to MZN cents', () => {
+    const valid = { size: 'OS', sizeSystem: 'STANDARD', condition: 'NEW', askingPrice: 1234.5 };
+    expect(inventoryDraftSchema.safeParse(valid).success).toBe(true);
+    expect(inventoryDraftSchema.safeParse({ ...valid, askingPrice: 1234.567 }).success).toBe(false);
+    expect(inventoryDraftSchema.safeParse({ ...valid, askingPrice: -1 }).success).toBe(false);
+    expect(inventoryDraftSchema.safeParse({ ...valid, sizeSystem: 'FAKE' }).success).toBe(false);
   });
 });

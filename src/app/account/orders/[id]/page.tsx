@@ -1,114 +1,46 @@
-import React from 'react';
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
+import { ArrowLeft } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
-import { Container } from '@/components/ui/Container';
-import { GlassPanel } from '@/components/ui/GlassPanel';
-import { StatusBadge } from '@/components/ui/StatusBadge';
-import { formatPrice, formatDate } from '@/lib/utils';
-import { ArrowLeft, ShieldCheck } from 'lucide-react';
+import { orderEventLabels, readableOrderStatus } from '@/lib/commerce/labels';
+import { formatDate, formatPrice } from '@/lib/utils';
 
-interface Props {
-  params: Promise<{ id: string }>;
-}
-
-export default async function OrderDetailPage({ params }: Props) {
+export default async function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect('/auth/sign-in');
-  }
-
-  const { data: order } = await supabase
-    .from('orders')
-    .select('*, order_items(*)')
-    .eq('id', id)
-    .single();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/auth/sign-in?redirectTo=/account/orders');
+  const [{ data: order }, { data: events }] = await Promise.all([
+    supabase.from('orders')
+      .select('id, order_number, created_at, status, payment_status, fulfillment_status, subtotal, shipping_amount, total_amount, currency, shipping_address_snapshot, shipping_method_snapshot, order_items(id, product_name_snapshot, brand_name_snapshot, size_snapshot, condition_snapshot, unit_price, quantity)')
+      .eq('id', id).eq('user_id', user.id).maybeSingle(),
+    supabase.from('order_events').select('id, event_type, created_at').eq('order_id', id).order('created_at'),
+  ]);
+  if (!order) notFound();
+  const address = order.shipping_address_snapshot as Record<string, unknown>;
+  const method = order.shipping_method_snapshot as Record<string, unknown>;
 
   return (
-    <div className="py-12 sm:py-16">
-      <Container className="max-w-4xl">
-        <div className="mb-6 flex items-center justify-between">
-          <Link
-            href="/account/orders"
-            className="inline-flex items-center gap-2 text-xs font-mono text-neutral-400 hover:text-white transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span>BACK TO ORDERS</span>
-          </Link>
+    <main className="min-h-screen bg-[#fbfaf6] px-4 pb-20 pt-32 text-black sm:px-6 lg:px-10">
+      <div className="mx-auto max-w-4xl">
+        <Link href="/account/orders" className="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-black/45 hover:text-black"><ArrowLeft className="h-4 w-4" /> Back to orders</Link>
+        <p className="mt-10 text-[10px] font-bold uppercase tracking-widest text-black/45">{formatDate(order.created_at)}</p>
+        <h1 className="mt-2 text-4xl font-black tracking-[-0.07em] sm:text-6xl">ORDER {order.order_number}.</h1>
+        <p className="mt-3 text-sm text-black/55">{readableOrderStatus(order.status, order.payment_status)} · {order.fulfillment_status === 'UNFULFILLED' ? 'Preparing for fulfillment' : order.fulfillment_status.replaceAll('_', ' ').toLowerCase()}</p>
+        <div className="mt-10 grid gap-6 md:grid-cols-[1.2fr_0.8fr]">
+          <section className="rounded-[1.5rem] bg-white p-5 shadow-sm sm:p-7">
+            <h2 className="text-xs font-bold uppercase tracking-wider">Your pieces</h2>
+            <div className="mt-5 divide-y divide-black/10">{order.order_items.map((item) => (
+              <div key={item.id} className="flex justify-between gap-4 py-4 text-sm"><div><p className="font-bold">{item.product_name_snapshot}</p><p className="mt-1 text-xs text-black/50">{item.brand_name_snapshot} · Size {item.size_snapshot} · {item.condition_snapshot}</p></div><strong>{formatPrice(Number(item.unit_price) * item.quantity, order.currency)}</strong></div>
+            ))}</div>
+            <div className="mt-4 space-y-2 border-t border-black/10 pt-4 text-sm"><p className="flex justify-between"><span>Subtotal</span><strong>{formatPrice(Number(order.subtotal), order.currency)}</strong></p><p className="flex justify-between"><span>Delivery</span><strong>{formatPrice(Number(order.shipping_amount), order.currency)}</strong></p><p className="flex justify-between border-t border-black/10 pt-3 text-lg font-black"><span>Total</span><span>{formatPrice(Number(order.total_amount), order.currency)}</span></p></div>
+          </section>
+          <div className="space-y-6">
+            <section className="rounded-[1.5rem] bg-[#efede6] p-5 sm:p-7"><h2 className="text-xs font-bold uppercase tracking-wider">Delivery</h2><p className="mt-4 text-sm font-semibold">{String(method.name ?? 'Delivery method pending')}</p><p className="mt-2 text-sm leading-6 text-black/55">{String(address.address_line_1 ?? '')}<br />{String(address.city ?? '')}, {String(address.province ?? '')}</p></section>
+            <section className="rounded-[1.5rem] bg-[#efede6] p-5 sm:p-7"><h2 className="text-xs font-bold uppercase tracking-wider">Order timeline</h2><ol className="mt-5 space-y-4">{(events ?? []).filter((event) => orderEventLabels[event.event_type]).map((event) => <li key={event.id} className="flex gap-3 text-sm"><span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-black" /><div><p className="font-semibold">{orderEventLabels[event.event_type]}</p><p className="text-xs text-black/45">{formatDate(event.created_at)}</p></div></li>)}</ol></section>
+          </div>
         </div>
-
-        <GlassPanel intensity="heavy" className="border-white/10 p-6 sm:p-8">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-6 mb-6">
-            <div>
-              <span className="text-[10px] font-mono tracking-widest text-acid uppercase block mb-1">
-                VAULT INVOICE RECORD
-              </span>
-              <h1 className="text-xl sm:text-2xl font-black font-mono uppercase text-white">
-                ORDER #{order?.order_number || id.slice(0, 8)}
-              </h1>
-              <p className="text-xs font-mono text-neutral-400 mt-1">
-                PLACED ON {order ? formatDate(order.created_at) : 'RECENTLY'}
-              </p>
-            </div>
-
-            <div className="flex items-center gap-3">
-              {order && <StatusBadge status={order.status} />}
-            </div>
-          </div>
-
-          <div className="space-y-4 mb-8">
-            <h3 className="text-xs font-mono font-semibold uppercase tracking-wider text-white">
-              AUTHENTICATED SPECIMENS
-            </h3>
-
-            {order?.order_items && order.order_items.length > 0 ? (
-              order.order_items.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-center justify-between p-4 rounded-lg border border-white/5 bg-white/[0.02]"
-                >
-                  <div>
-                    <div className="text-xs font-mono text-neutral-400 uppercase">
-                      {item.brand_name_snapshot}
-                    </div>
-                    <div className="text-sm font-semibold text-white">
-                      {item.product_name_snapshot}
-                    </div>
-                    <div className="text-xs font-mono text-neutral-500 mt-0.5">
-                      SIZE: {item.size_snapshot} • CONDITION: {item.condition_snapshot}
-                    </div>
-                  </div>
-                  <div className="text-right font-mono">
-                    <div className="text-sm font-bold text-white">
-                      {formatPrice(item.unit_price, order.currency)}
-                    </div>
-                    <div className="text-[10px] text-neutral-400">QTY: {item.quantity}</div>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="p-4 rounded-lg border border-white/5 bg-white/[0.02] text-xs font-mono text-neutral-400">
-                Order items snapshot recorded in secure vault ledger.
-              </div>
-            )}
-          </div>
-
-          <div className="border-t border-white/10 pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-mono">
-            <div className="flex items-center gap-2 text-neutral-400">
-              <ShieldCheck className="h-4 w-4 text-acid" />
-              <span>STREET CULTURE 100% AUTHENTICITY CERTIFICATE ISSUED</span>
-            </div>
-            <div className="text-base font-bold text-acid">
-              TOTAL: {order ? formatPrice(order.total_amount, order.currency) : '$0.00'}
-            </div>
-          </div>
-        </GlassPanel>
-      </Container>
-    </div>
+      </div>
+    </main>
   );
 }

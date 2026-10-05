@@ -1,67 +1,25 @@
-import React from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { ArrowLeft, ArrowUpRight } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
-import { Container } from '@/components/ui/Container';
-import { EmptyState } from '@/components/ui/EmptyState';
-import { ArrowLeft } from 'lucide-react';
 
 export default async function WishlistPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect('/auth/sign-in?redirectTo=/account/wishlist');
-  }
-
-  const { data: wishlistItems } = await supabase
-    .from('wishlist_items')
-    .select('*, products(*)')
-    .eq('user_id', user.id);
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/auth/sign-in?redirectTo=/account/wishlist');
+  const { data: items, error } = await supabase.from('wishlist_items')
+    .select('id, products(name, slug)')
+    .eq('user_id', user.id).order('created_at', { ascending: false });
+  if (error) throw new Error('Wishlist is temporarily unavailable.');
 
   return (
-    <div className="py-12 sm:py-16">
-      <Container>
-        <div className="mb-6 flex items-center justify-between">
-          <Link
-            href="/account"
-            className="inline-flex items-center gap-2 text-xs font-mono text-neutral-400 hover:text-white transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span>BACK TO ACCOUNT</span>
-          </Link>
-        </div>
-
-        <div className="mb-8">
-          <span className="text-[10px] font-mono tracking-widest text-acid uppercase block mb-1">
-            PERSONAL VAULT WATCHLIST
-          </span>
-          <h1 className="text-2xl sm:text-3xl font-black uppercase tracking-tight text-white">
-            SAVED GRAILS
-          </h1>
-        </div>
-
-        {!wishlistItems || wishlistItems.length === 0 ? (
-          <EmptyState
-            title="NO SAVED GRAILS"
-            description="Your personal watchlist is currently empty. Bookmark rare archival pieces to receive liquidity and price alerts."
-            actionText="DISCOVER GRAILS"
-            actionHref="/new"
-          />
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {wishlistItems.map((item) => (
-              <div key={item.id} className="p-4 rounded-xl border border-white/10 bg-white/[0.03]">
-                <div className="text-sm font-semibold text-white">
-                  {(item.products as { name: string } | null)?.name || 'Archival Specimen'}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </Container>
-    </div>
+    <main className="min-h-screen bg-[#fbfaf6] px-4 pb-20 pt-32 text-black sm:px-6 lg:px-10">
+      <div className="mx-auto max-w-5xl">
+        <Link href="/account" className="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-black/45 hover:text-black"><ArrowLeft className="h-4 w-4" /> Back to account</Link>
+        <p className="mt-10 text-[10px] font-bold uppercase tracking-widest text-black/45">Saved pieces</p>
+        <h1 className="mt-2 text-5xl font-black tracking-[-0.07em] sm:text-7xl">WISHLIST.</h1>
+        {!items?.length ? <div className="mt-10 rounded-[2rem] bg-[#efede6] p-8 sm:p-12"><h2 className="text-2xl font-black">Nothing saved yet.</h2><p className="mt-2 text-sm text-black/55">Tap the heart on a piece to find it here.</p><Link href="/new" className="mt-6 inline-flex rounded-full bg-black px-6 py-3 text-xs font-bold uppercase tracking-wider text-white">Explore pieces</Link></div> : <div className="mt-10 grid gap-3 sm:grid-cols-2">{items.map((item) => item.products && <Link key={item.id} href={`/products/${item.products.slug}`} className="group flex items-center justify-between gap-4 rounded-[1.5rem] bg-white p-6 shadow-sm transition hover:shadow-md"><span className="font-bold">{item.products.name}</span><ArrowUpRight className="h-5 w-5 shrink-0 transition group-hover:-translate-y-1 group-hover:translate-x-1" /></Link>)}</div>}
+      </div>
+    </main>
   );
 }

@@ -1,97 +1,75 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
-import { Search, Heart, ShoppingBag, User } from 'lucide-react';
+import { Heart, Menu, Search, ShoppingBag, User, X } from 'lucide-react';
+import { useCommerce } from '@/features/commerce/CommerceProvider';
+
+const navigation = [
+  { label: 'NEW', href: '/#new' },
+  { label: 'SNEAKERS', href: '/#sneakers' },
+  { label: 'STREETWEAR', href: '/#streetwear' },
+  { label: 'LUXURY', href: '/#luxury' },
+  { label: 'ACCESSORIES', href: '/#accessories' },
+  { label: 'BRANDS', href: '/brands' },
+  { label: 'SELL', href: '/#sell' },
+];
 
 export function Header() {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const { cartCount, openCart } = useCommerce();
+
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-white/10 bg-vault-950/80 backdrop-blur-xl">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        {/* Logo */}
-        <Link href="/" className="flex flex-col group">
-          <span className="text-lg font-black tracking-widest text-white uppercase group-hover:text-acid transition-colors">
-            STREET CULTURE
-          </span>
-          <span className="text-[9px] font-mono tracking-[0.25em] text-neutral-400 uppercase -mt-1">
-            ARCHIVAL VAULT
-          </span>
+    <header className="fixed inset-x-0 top-0 z-50 px-3 pt-3 sm:px-5 sm:pt-4">
+      <div className="mx-auto flex h-16 max-w-[1500px] items-center justify-between rounded-2xl border border-white/35 bg-white/78 px-4 text-black shadow-[0_12px_50px_rgba(0,0,0,0.08)] backdrop-blur-2xl sm:px-6">
+        <Link href="/" className="group shrink-0" aria-label="Street Culture home">
+          <Image
+            src="/brand/street-culture-horizontal.png"
+            alt="Street Culture — Authentic Only"
+            width={796}
+            height={186}
+            priority
+            className="h-8 w-auto sm:h-10 lg:h-11"
+          />
         </Link>
 
-        {/* Navigation */}
-        <nav className="hidden lg:flex items-center gap-7 text-[12px] font-mono uppercase tracking-wider text-neutral-300">
-          <Link href="/new" className="hover:text-white transition-colors">
-            NEW IN
-          </Link>
-          <Link href="/sneakers" className="hover:text-white transition-colors">
-            SNEAKERS
-          </Link>
-          <Link href="/streetwear" className="hover:text-white transition-colors">
-            STREETWEAR
-          </Link>
-          <Link href="/luxury" className="hover:text-white transition-colors">
-            LUXURY
-          </Link>
-          <Link href="/accessories" className="hover:text-white transition-colors">
-            ACCESSORIES
-          </Link>
-          <Link href="/brands" className="hover:text-white transition-colors">
-            BRANDS
-          </Link>
-          <Link
-            href="/consign"
-            className="flex items-center gap-1.5 text-acid font-semibold hover:text-acid-hover transition-colors"
-          >
-            <span className="h-1.5 w-1.5 rounded-full bg-acid animate-pulse" />
-            CONSIGN
-          </Link>
-          <Link href="/search" className="hover:text-white transition-colors">
-            DROPS
-          </Link>
+        <nav className="hidden items-center gap-5 xl:flex" aria-label="Primary navigation">
+          {navigation.map((item) => (
+            <Link key={item.label} href={item.href} className="text-[11px] font-bold tracking-[0.12em] text-black/65 transition hover:text-black">
+              {item.label}
+            </Link>
+          ))}
         </nav>
 
-        {/* Right actions */}
-        <div className="flex items-center gap-4">
-          {/* Command + K Search bar */}
-          <Link
-            href="/search"
-            className="hidden md:flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 text-[11px] font-mono text-neutral-400 hover:border-white/20 hover:text-neutral-200 transition-all"
-          >
-            <Search className="h-3.5 w-3.5 text-neutral-400" />
-            <span>COMMAND + K</span>
+        <div className="flex items-center gap-1 sm:gap-2">
+          <Link href="/search" className="header-action" aria-label="Search">
+            <Search className="h-4 w-4" />
+            <span className="hidden text-[10px] font-bold tracking-[0.12em] lg:inline">SEARCH</span>
           </Link>
-
-          {/* Wishlist */}
-          <Link
-            href="/account/wishlist"
-            className="relative flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-neutral-300 hover:border-white/20 hover:text-white transition-all"
-            aria-label="Wishlist"
-          >
-            <Heart className="h-4 w-4" />
-            <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-acid text-[10px] font-bold text-black font-mono">
-              3
-            </span>
-          </Link>
-
-          {/* Cart */}
-          <Link
-            href="/account"
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-neutral-300 hover:border-white/20 hover:text-white transition-all"
-            aria-label="Cart"
-          >
+          <Link href="/account" className="header-action hidden sm:flex" aria-label="Account"><User className="h-4 w-4" /></Link>
+          <Link href="/account/wishlist" className="header-action hidden sm:flex" aria-label="Wishlist"><Heart className="h-4 w-4" /></Link>
+          <button type="button" onClick={openCart} className="header-action relative" aria-label={`Bag with ${cartCount} items`}>
             <ShoppingBag className="h-4 w-4" />
-          </Link>
-
-          {/* Account / Sign In */}
-          <Link
-            href="/auth/sign-in"
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-neutral-300 hover:border-white/20 hover:text-white transition-all"
-            aria-label="User Account"
-          >
-            <User className="h-4 w-4" />
-          </Link>
+            <span className="hidden text-[10px] font-bold tracking-[0.12em] lg:inline">BAG</span>
+            {cartCount > 0 && <span className="grid h-5 min-w-5 place-items-center rounded-full bg-acid px-1 text-[10px] font-black">{cartCount}</span>}
+          </button>
+          <button type="button" onClick={() => setMenuOpen((value) => !value)} className="header-action xl:hidden" aria-expanded={menuOpen} aria-label="Toggle menu">
+            {menuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+          </button>
         </div>
       </div>
+
+      {menuOpen && (
+        <nav className="mx-auto mt-2 max-w-[1500px] rounded-2xl border border-white/35 bg-white/95 p-3 text-black shadow-xl backdrop-blur-2xl xl:hidden" aria-label="Mobile navigation">
+          <div className="grid grid-cols-2 gap-1">
+            {navigation.map((item) => (
+              <Link key={item.label} href={item.href} onClick={() => setMenuOpen(false)} className="rounded-xl px-4 py-3 text-xs font-bold tracking-[0.12em] hover:bg-black hover:text-white">{item.label}</Link>
+            ))}
+            <Link href="/account" onClick={() => setMenuOpen(false)} className="rounded-xl px-4 py-3 text-xs font-bold tracking-[0.12em] hover:bg-black hover:text-white">ACCOUNT</Link>
+          </div>
+        </nav>
+      )}
     </header>
   );
 }

@@ -15,8 +15,8 @@ export default function ConsignPage() {
     },
     {
       step: '02',
-      title: 'INSURED TRANSIT TO VAULT',
-      desc: 'Receive a prepaid insured shipping label or hand-deliver directly to our secure central inspection vault.',
+      title: 'DELIVERY ARRANGEMENTS',
+      desc: 'Our team will confirm how to hand over or send your item for inspection.',
       icon: <ShieldCheck className="h-6 w-6 text-acid" />,
     },
     {
@@ -27,8 +27,8 @@ export default function ConsignPage() {
     },
     {
       step: '04',
-      title: 'STUDIO LISTING & DISBURSAL',
-      desc: 'We capture editorial 4K photography, publish to our global collectors network, and disburse your funds within 48H of sale.',
+      title: 'LISTING & PAYOUT',
+      desc: 'Once your item is approved, it can be listed for sale. A seller payout is recorded after the buyer payment is confirmed.',
       icon: <DollarSign className="h-6 w-6 text-acid" />,
     },
   ];
@@ -86,43 +86,35 @@ export default function ConsignPage() {
           ))}
         </div>
 
-        {/* Commission Tiers Card */}
+        {/* Approved MZN consignment terms */}
         <GlassPanel intensity="medium" className="p-8 sm:p-12 border-white/10 max-w-4xl mx-auto">
           <div className="text-center mb-8">
             <span className="text-[10px] font-mono tracking-widest text-acid uppercase block mb-1">
               TRANSPARENT ECONOMICS
             </span>
             <h2 className="text-xl sm:text-3xl font-black uppercase text-white">
-              COMPETITIVE CONSIGNMENT COMMISSIONS
+              CLEAR CONSIGNMENT TERMS
             </h2>
             <p className="text-xs font-mono text-neutral-400 mt-1">
-              Zero listing fees. You only pay when your specimen sells.
+              For each MZN consignment sale, STREET CULTURE retains 30% and you receive 70%.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 text-center">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 text-center">
             <div className="p-6 rounded-xl border border-white/10 bg-white/[0.02]">
               <span className="text-xs font-mono text-neutral-400 uppercase block mb-1">
-                STANDARD SELLER
+                PLATFORM SHARE
               </span>
-              <span className="text-3xl font-black font-mono text-white">12%</span>
-              <span className="text-[11px] font-mono text-neutral-500 block mt-1">+ $5 vault processing</span>
+              <span className="text-3xl font-black font-mono text-white">30%</span>
+              <span className="text-[11px] font-mono text-neutral-500 block mt-1">Retained after a confirmed sale</span>
             </div>
 
             <div className="p-6 rounded-xl border border-acid/40 bg-acid/10">
               <span className="text-xs font-mono text-acid uppercase block mb-1 font-bold">
-                VERIFIED VIP
+                YOUR SHARE
               </span>
-              <span className="text-3xl font-black font-mono text-acid">8%</span>
-              <span className="text-[11px] font-mono text-neutral-300 block mt-1">+ $3 vault processing</span>
-            </div>
-
-            <div className="p-6 rounded-xl border border-white/10 bg-white/[0.02]">
-              <span className="text-xs font-mono text-neutral-400 uppercase block mb-1">
-                ENTERPRISE PARTNER
-              </span>
-              <span className="text-3xl font-black font-mono text-white">5%</span>
-              <span className="text-[11px] font-mono text-neutral-500 block mt-1">Dedicated vault curator</span>
+              <span className="text-3xl font-black font-mono text-acid">70%</span>
+              <span className="text-[11px] font-mono text-neutral-300 block mt-1">A pending payout is created after buyer payment</span>
             </div>
           </div>
         </GlassPanel>

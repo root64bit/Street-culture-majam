@@ -6,7 +6,7 @@ import { Container } from '@/components/ui/Container';
 import { GlassPanel } from '@/components/ui/GlassPanel';
 import { Button } from '@/components/ui/Button';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
-import { Package, Heart, Tag, CreditCard, Shield, LogOut } from 'lucide-react';
+import { Package, Heart, Tag, CreditCard, Shield, LogOut, Settings } from 'lucide-react';
 
 export default async function AccountPage() {
   const supabase = await createClient();
@@ -24,6 +24,7 @@ export default async function AccountPage() {
     .select('*')
     .eq('id', user.id)
     .single();
+  const { data: isStaff } = await supabase.rpc('is_staff');
 
   const handleSignOut = async () => {
     'use server';
@@ -33,6 +34,12 @@ export default async function AccountPage() {
   };
 
   const navCards = [
+    ...(isStaff ? [{
+      title: 'STAFF PANEL',
+      desc: 'Manage product drafts, images, and operations',
+      icon: <Settings className="h-5 w-5 text-acid" />,
+      href: '/admin',
+    }] : []),
     {
       title: 'MY ORDERS',
       desc: 'Track active vault shipments and delivery status',
@@ -53,7 +60,7 @@ export default async function AccountPage() {
     },
     {
       title: 'PAYOUTS & BALANCE',
-      desc: 'Manage disbursals and banking settlement details',
+      desc: 'See pending and completed seller payouts',
       icon: <CreditCard className="h-5 w-5 text-acid" />,
       href: '/account/payouts',
     },
@@ -123,7 +130,7 @@ export default async function AccountPage() {
           <div className="flex items-center gap-3">
             <Shield className="h-5 w-5 text-acid" />
             <div className="text-xs font-mono text-neutral-300">
-              <span className="font-semibold text-white">VAULT PROTOCOL ACTIVE:</span> All consignments and purchases are protected by escrow custody.
+              <span className="font-semibold text-white">YOUR ACCOUNT:</span> Track purchases, submitted pieces and pending payouts in one place.
             </div>
           </div>
           <Link href="/consign/new">

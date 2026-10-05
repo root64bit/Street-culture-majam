@@ -3,9 +3,15 @@
 @tailwind utilities;
 
 :root {
-  --background: #0a0b0d;
-  --foreground: #f8fafc;
+  color-scheme: light;
+  --background: #fbfaf6;
+  --foreground: #11110f;
   --acid: #c6ff00;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 6rem;
 }
 
 body {
@@ -16,26 +22,57 @@ body {
   min-height: 100vh;
 }
 
-/* Custom scrollbar */
+button,
+a,
+input,
+summary {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline: 2px solid #9ac500;
+  outline-offset: 3px;
+}
+
+::selection {
+  background: #c6ff00;
+  color: #000;
+}
+
 ::-webkit-scrollbar {
   width: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0a0b0d;
+  background: #f1efe8;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 4px;
+  border: 2px solid #f1efe8;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.28);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #c6ff00;
+  background: #829f00;
 }
 
-/* Neon text selection */
-::selection {
-  background: #c6ff00;
-  color: #000000;
+@layer components {
+  .header-action {
+    @apply flex h-10 items-center justify-center gap-2 rounded-full border border-black/10 bg-white/50 px-3 text-black transition hover:border-black/30 hover:bg-white;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

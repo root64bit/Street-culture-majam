@@ -1,5 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 
 export function Footer() {
   return (
@@ -8,18 +9,12 @@ export function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-10 mb-12">
           {/* Brand Manifesto */}
           <div className="col-span-1 md:col-span-2">
-            <div className="flex flex-col mb-4">
-              <span className="text-xl font-black tracking-widest text-white uppercase">
-                STREET CULTURE
-              </span>
-              <span className="text-[10px] font-mono tracking-[0.25em] text-acid uppercase">
-                ARCHIVAL VAULT & CONSIGNMENT
-              </span>
-            </div>
+            <Link href="/" className="mb-4 inline-flex items-center gap-3" aria-label="Street Culture home">
+              <Image src="/brand/street-culture-icon.png" alt="" width={52} height={55} className="h-12 w-auto" />
+              <span className="text-sm font-black tracking-[0.08em] text-white">STREET CULTURE<span className="mt-1 block text-[9px] font-semibold tracking-[0.25em] text-white/55">AUTHENTIC ONLY</span></span>
+            </Link>
             <p className="max-w-md text-xs leading-relaxed text-neutral-400 font-sans">
-              The premier authenticated resale and consignment marketplace for archival sneakers,
-              high streetwear, and luxury maison artifacts. Every item passes rigorous physical
-              multi-point inspection before disbursal.
+              Curated sneakers, streetwear and luxury. Every piece is inspected before it is approved for sale.
             </p>
           </div>
 
@@ -88,10 +83,10 @@ export function Footer() {
         </div>
 
         <div className="flex flex-col sm:flex-row items-center justify-between border-t border-white/5 pt-8 text-[11px] font-mono text-neutral-500">
-          <div>© {new Date().getFullYear()} STREET CULTURE ARCHIVAL VAULT. ALL RIGHTS RESERVED.</div>
+          <div>© {new Date().getFullYear()} STREET CULTURE. ALL RIGHTS RESERVED.</div>
           <div className="flex gap-6 mt-4 sm:mt-0">
             <span>STRICT AUTHENTICITY GUARANTEE</span>
-            <span>SECURE ESCROW PROTOCOL</span>
+            <span>ORDER STATUS TRACKING</span>
           </div>
         </div>
       </div>

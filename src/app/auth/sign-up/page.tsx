@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { Container } from '@/components/ui/Container';
 import { GlassPanel } from '@/components/ui/GlassPanel';
 import { Input } from '@/components/ui/Input';
@@ -11,13 +10,11 @@ import { createClient } from '@/lib/supabase/client';
 import { signUpSchema } from '@/lib/schemas/auth.schema';
 
 export default function SignUpPage() {
-  const router = useRouter();
-
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+  const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -33,7 +30,7 @@ export default function SignUpPage() {
     setLoading(true);
     try {
       const supabase = createClient();
-      const { error: signUpError } = await supabase.auth.signUp({
+      const { data, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -49,10 +46,11 @@ export default function SignUpPage() {
         return;
       }
 
-      setSuccess(true);
-      setTimeout(() => {
-        router.push('/account');
-      }, 1500);
+      if (data.session) {
+        window.location.assign('/account');
+      } else {
+        setSuccess('Account created. Check your email for the confirmation link, then sign in.');
+      }
     } catch {
       setError('An unexpected error occurred during account creation.');
     } finally {
@@ -84,7 +82,7 @@ export default function SignUpPage() {
 
           {success && (
             <div className="mb-4 rounded-lg border border-acid/40 bg-acid/10 p-3 text-xs font-mono text-acid">
-              Account created successfully! Redirecting to vault...
+              {success}
             </div>
           )}
 

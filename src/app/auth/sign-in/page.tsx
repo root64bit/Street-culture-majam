@@ -2,7 +2,7 @@
 
 import React, { useState, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { Container } from '@/components/ui/Container';
 import { GlassPanel } from '@/components/ui/GlassPanel';
 import { Input } from '@/components/ui/Input';
@@ -11,9 +11,10 @@ import { createClient } from '@/lib/supabase/client';
 import { signInSchema } from '@/lib/schemas/auth.schema';
 
 function SignInForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTo = searchParams.get('redirectTo') || '/account';
+  const requestedRedirect = searchParams.get('redirectTo') || '/account';
+  const redirectTo = requestedRedirect.startsWith('/') && !requestedRedirect.startsWith('//')
+    ? requestedRedirect : '/account';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -43,8 +44,9 @@ function SignInForm() {
         return;
       }
 
-      router.push(redirectTo);
-      router.refresh();
+      // A full navigation ensures the server sees the newly persisted auth
+      // cookie before evaluating protected routes and their RLS queries.
+      window.location.assign(redirectTo);
     } catch {
       setError('An unexpected error occurred during sign in.');
     } finally {
