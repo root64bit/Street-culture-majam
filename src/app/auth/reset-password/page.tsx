@@ -54,35 +54,37 @@ export default function ResetPasswordPage() {
   return (
     <div className="py-16 sm:py-24">
       <Container className="max-w-md">
-        <GlassPanel intensity="heavy" className="border-white/10 shadow-glass">
+        <GlassPanel intensity="heavy" className="border-black/10 bg-white shadow-xl">
           <div className="mb-6 text-center">
-            <span className="text-[10px] font-mono tracking-widest text-acid uppercase block mb-1">
+            <span className="text-[10px] font-mono tracking-widest text-lime-700 uppercase block mb-1">
               SECURITY KEY UPDATE
             </span>
-            <h1 className="text-2xl font-black uppercase tracking-tight text-white">
+            <h1 className="text-2xl font-black uppercase tracking-tight text-neutral-950">
               NEW PASSWORD
             </h1>
-            <p className="mt-1 text-xs font-mono text-neutral-400">
+            <p className="mt-1 text-xs font-mono text-neutral-600">
               Enter your updated vault password below
             </p>
           </div>
 
           {error && (
-            <div className="mb-4 rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-xs font-mono text-red-300">
+            <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-xs font-mono text-red-700">
               {error}
             </div>
           )}
 
           {message && (
-            <div className="mb-4 rounded-lg border border-acid/40 bg-acid/10 p-3 text-xs font-mono text-acid">
+            <div role="status" className="mb-4 rounded-lg border border-lime-300 bg-lime-50 p-3 text-xs font-mono text-lime-800">
               {message}
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <Input
+              tone="light"
               label="New Password"
               type="password"
+              autoComplete="new-password"
               placeholder="••••••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -90,8 +92,10 @@ export default function ResetPasswordPage() {
             />
 
             <Input
+              tone="light"
               label="Confirm New Password"
               type="password"
+              autoComplete="new-password"
               placeholder="••••••••••••"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
