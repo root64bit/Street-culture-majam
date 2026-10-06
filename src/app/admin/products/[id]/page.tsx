@@ -1,13 +1,13 @@
 import { notFound } from 'next/navigation';
-import { requireStaffPage } from '@/lib/admin/access';
+import { requireAdminPage } from '@/lib/admin/access';
 import { ProductEditor } from '@/components/admin/ProductEditor';
 
 export default async function EditAdminProductPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { supabase } = await requireStaffPage(`/admin/products/${id}`);
+  const { supabase } = await requireAdminPage(`/admin/products/${id}`);
   const [product, brands, categories, listings, variants] = await Promise.all([
     supabase.from('products').select('id, name, brand_id, category_id, description, model, sku, colorway, release_year, gender, active, product_media(id, storage_path, sort_order, alt_text)')
-      .eq('id', id).eq('active', false).maybeSingle(),
+      .eq('id', id).maybeSingle(),
     supabase.from('brands').select('id, name').eq('active', true).order('name'),
     supabase.from('categories').select('id, name').eq('active', true).order('sort_order'),
     supabase.from('listings').select('id, status, condition, asking_price, currency, authentication_status, variant_id')

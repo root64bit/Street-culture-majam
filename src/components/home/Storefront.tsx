@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { type ProductCategory, type StoreProduct } from '@/data/storefront';
 import { useCommerce } from '@/features/commerce/CommerceProvider';
-import { formatPrice } from '@/lib/utils';
+import { DisplayPrice } from '@/features/currency/CurrencyProvider';
 import { cn } from '@/lib/utils';
 import { TrustStrip } from '@/components/layout/TrustStrip';
 import { useWishlist } from '@/features/commerce/useWishlist';
@@ -218,7 +218,7 @@ export function Storefront({
           <div className="flex flex-col justify-center px-6 py-12 sm:px-10 lg:px-16 lg:py-16">
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-acid">{featuredProduct.brand}</p>
             <h2 className="mt-5 max-w-[12ch] text-5xl font-black leading-[0.87] tracking-[-0.07em] sm:text-7xl">{featuredProduct.name}</h2>
-            <p className="mt-6 max-w-md text-sm leading-7 text-white/60">Verified {featuredProduct.condition.toLowerCase()} piece · {featuredProduct.sizes.join(', ')} · {formatPrice(featuredProduct.price, 'MZN')}</p>
+            <p className="mt-6 max-w-md text-sm leading-7 text-white/60">Verified {featuredProduct.condition.toLowerCase()} piece · {featuredProduct.sizes.join(', ')} · <DisplayPrice amount={featuredProduct.price} /></p>
             <Link href={`/products/${featuredProduct.slug}`} className="mt-8 inline-flex h-13 w-fit items-center gap-3 rounded-full bg-white px-6 text-[10px] font-bold uppercase tracking-[0.14em] text-black transition hover:bg-acid">View this piece <ArrowRight className="h-4 w-4" /></Link>
           </div>
         </div>
@@ -357,7 +357,7 @@ function ProductTile({
         <p className="text-[8px] font-bold uppercase tracking-[0.16em] text-black/45 sm:text-[9px]">{product.brand}</p>
         <h3 className="mt-1 line-clamp-2 min-h-10 text-xs font-semibold leading-5 sm:text-sm">{product.name}</h3>
         <div className="mt-2 flex items-center justify-between gap-2">
-          <p className="text-xs font-black sm:text-sm">{formatPrice(product.price, 'MZN')}</p>
+          <p className="text-xs font-black sm:text-sm"><DisplayPrice amount={product.price} /></p>
           <p className="truncate text-[9px] text-black/45 sm:text-[10px]">{product.sizes.slice(0, 3).join(' · ')}{product.sizes.length > 3 ? ' +' : ''}</p>
         </div>
       </div>

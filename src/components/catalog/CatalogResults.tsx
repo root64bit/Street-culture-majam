@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { ArrowUpRight, ShoppingBag } from 'lucide-react';
 import type { StoreProduct } from '@/data/storefront';
 import { useCommerce } from '@/features/commerce/CommerceProvider';
-import { formatPrice } from '@/lib/utils';
+import { DisplayPrice } from '@/features/currency/CurrencyProvider';
 
 export function CatalogResults({ products }: { products: StoreProduct[] }) {
   const { openQuickBuy } = useCommerce();
@@ -41,7 +41,7 @@ export function CatalogResults({ products }: { products: StoreProduct[] }) {
               <span className="line-clamp-2">{product.name}</span><ArrowUpRight className="h-4 w-4 shrink-0" />
             </Link>
             <p className="mt-2 text-xs text-black/55">{product.sizes[0]} · {product.condition}</p>
-            <p className="mt-2 text-sm font-black">{formatPrice(product.price, 'MZN')}</p>
+            <p className="mt-2 text-sm font-black"><DisplayPrice amount={product.price} /></p>
           </div>
         </article>
       ))}

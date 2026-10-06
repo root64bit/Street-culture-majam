@@ -89,6 +89,7 @@ export function Footer() {
             <span>ORDER STATUS TRACKING</span>
           </div>
         </div>
+        <p className="mt-4 text-[10px] text-neutral-500">EUR/ZAR displays are estimates; checkout charges MZN. <a href="https://www.exchangerate-api.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-white">Rates By Exchange Rate API</a>.</p>
       </div>
     </footer>
   );

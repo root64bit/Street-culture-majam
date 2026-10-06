@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Heart, Menu, Search, ShoppingBag, User, X } from 'lucide-react';
 import { useCommerce } from '@/features/commerce/CommerceProvider';
+import { useDisplayCurrency } from '@/features/currency/CurrencyProvider';
 
 const navigation = [
   { label: 'NEW', href: '/#new' },
@@ -19,6 +20,7 @@ const navigation = [
 export function Header() {
   const [menuOpen, setMenuOpen] = useState(false);
   const { cartCount, openCart } = useCommerce();
+  const { currency, rates, updatedAt, chooseCurrency } = useDisplayCurrency();
 
   return (
     <header className="fixed inset-x-0 top-0 z-50 px-3 pt-3 sm:px-5 sm:pt-4">
@@ -43,6 +45,12 @@ export function Header() {
         </nav>
 
         <div className="flex items-center gap-1 sm:gap-2">
+          <label className="sr-only" htmlFor="display-currency">Display currency</label>
+          <select id="display-currency" value={currency} onChange={(event) => chooseCurrency(event.target.value as 'MZN' | 'EUR' | 'ZAR')}
+            aria-label="Display currency" title={updatedAt ? `Estimated rates updated ${new Date(updatedAt).toLocaleDateString()}; checkout charges MZN` : 'Checkout charges MZN'}
+            className="max-w-[74px] rounded-lg border border-black/10 bg-transparent px-1 py-2 text-[10px] font-bold text-black sm:max-w-none">
+            <option value="MZN">MZN</option><option value="EUR" disabled={!rates.EUR}>EUR</option><option value="ZAR" disabled={!rates.ZAR}>ZAR</option>
+          </select>
           <Link href="/search" className="header-action" aria-label="Search">
             <Search className="h-4 w-4" />
             <span className="hidden text-[10px] font-bold tracking-[0.12em] lg:inline">SEARCH</span>

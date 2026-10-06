@@ -1,0 +1,374 @@
+{
+  "sourceLabel": "Street culture docs/products",
+  "fileCount": 13,
+  "validImageCount": 13,
+  "duplicateHashes": 0,
+  "candidateCount": 10,
+  "candidates": [
+    {
+      "reference": "FOLDER-DIOR-TOTE",
+      "proposedName": "Dior patterned tote",
+      "proposedBrand": "Dior",
+      "proposedCategory": "Bags",
+      "imagePaths": [
+        "dior/1.png"
+      ],
+      "reviewState": "REQUIRES_REVIEW",
+      "importable": false,
+      "reviewRequired": [
+        "exact model",
+        "selling price (MZN)",
+        "image rights"
+      ],
+      "inventoryConfirmation": "Merchant confirms real authenticated store-owned stock: one new STANDARD-size unit per candidate.",
+      "sellingPrice": null,
+      "condition": "NEW",
+      "ownershipType": "STREET_CULTURE",
+      "size": "ONE_SIZE",
+      "sizeSystem": "STANDARD",
+      "quantity": 1,
+      "active": false
+    },
+    {
+      "reference": "FOLDER-HERMES-TAN",
+      "proposedName": "Hermès tan top-handle bag",
+      "proposedBrand": "Hermès",
+      "proposedCategory": "Bags",
+      "imagePaths": [
+        "hermes_birkin_bag/1.png"
+      ],
+      "reviewState": "REQUIRES_REVIEW",
+      "importable": false,
+      "reviewRequired": [
+        "exact model",
+        "selling price (MZN)",
+        "image rights"
+      ],
+      "inventoryConfirmation": "Merchant confirms real authenticated store-owned stock: one new STANDARD-size unit per candidate.",
+      "sellingPrice": null,
+      "condition": "NEW",
+      "ownershipType": "STREET_CULTURE",
+      "size": "ONE_SIZE",
+      "sizeSystem": "STANDARD",
+      "quantity": 1,
+      "active": false
+    },
+    {
+      "reference": "FOLDER-HERMES-TAUPE",
+      "proposedName": "Hermès taupe top-handle bag",
+      "proposedBrand": "Hermès",
+      "proposedCategory": "Bags",
+      "imagePaths": [
+        "hermes_birkin_bag/2.png"
+      ],
+      "reviewState": "REQUIRES_REVIEW",
+      "importable": false,
+      "reviewRequired": [
+        "exact model",
+        "selling price (MZN)",
+        "image rights"
+      ],
+      "inventoryConfirmation": "Merchant confirms real authenticated store-owned stock: one new STANDARD-size unit per candidate.",
+      "sellingPrice": null,
+      "condition": "NEW",
+      "ownershipType": "STREET_CULTURE",
+      "size": "ONE_SIZE",
+      "sizeSystem": "STANDARD",
+      "quantity": 1,
+      "active": false
+    },
+    {
+      "reference": "FOLDER-DIOR-CROSSBODY",
+      "proposedName": "Dior monogram crossbody",
+      "proposedBrand": "Dior",
+      "proposedCategory": "Bags",
+      "imagePaths": [
+        "hermes_birkin_bag/3.png"
+      ],
+      "reviewState": "REQUIRES_REVIEW",
+      "importable": false,
+      "reviewRequired": [
+        "exact model",
+        "selling price (MZN)",
+        "image rights"
+      ],
+      "inventoryConfirmation": "Merchant confirms real authenticated store-owned stock: one new STANDARD-size unit per candidate.",
+      "sellingPrice": null,
+      "condition": "NEW",
+      "ownershipType": "STREET_CULTURE",
+      "size": "ONE_SIZE",
+      "sizeSystem": "STANDARD",
+      "quantity": 1,
+      "active": false
+    },
+    {
+      "reference": "FOLDER-LV-DUFFLE",
+      "proposedName": "Louis Vuitton monogram duffle",
+      "proposedBrand": "Louis Vuitton",
+      "proposedCategory": "Bags",
+      "imagePaths": [
+        "Lv/1.png"
+      ],
+      "reviewState": "REQUIRES_REVIEW",
+      "importable": false,
+      "reviewRequired": [
+        "exact model",
+        "selling price (MZN)",
+        "image rights"
+      ],
+      "inventoryConfirmation": "Merchant confirms real authenticated store-owned stock: one new STANDARD-size unit per candidate.",
+      "sellingPrice": null,
+      "condition": "NEW",
+      "ownershipType": "STREET_CULTURE",
+      "size": "ONE_SIZE",
+      "sizeSystem": "STANDARD",
+      "quantity": 1,
+      "active": false
+    },
+    {
+      "reference": "FOLDER-LV-BACKPACK",
+      "proposedName": "Louis Vuitton monogram backpack",
+      "proposedBrand": "Louis Vuitton",
+      "proposedCategory": "Bags",
+      "imagePaths": [
+        "Lv/2.png"
+      ],
+      "reviewState": "REQUIRES_REVIEW",
+      "importable": false,
+      "reviewRequired": [
+        "exact model",
+        "selling price (MZN)",
+        "image rights"
+      ],
+      "inventoryConfirmation": "Merchant confirms real authenticated store-owned stock: one new STANDARD-size unit per candidate.",
+      "sellingPrice": null,
+      "condition": "NEW",
+      "ownershipType": "STREET_CULTURE",
+      "size": "ONE_SIZE",
+      "sizeSystem": "STANDARD",
+      "quantity": 1,
+      "active": false
+    },
+    {
+      "reference": "FOLDER-LV-TOTE",
+      "proposedName": "Louis Vuitton monogram tote",
+      "proposedBrand": "Louis Vuitton",
+      "proposedCategory": "Bags",
+      "imagePaths": [
+        "Lv/3.png"
+      ],
+      "reviewState": "REQUIRES_REVIEW",
+      "importable": false,
+      "reviewRequired": [
+        "exact model",
+        "selling price (MZN)",
+        "image rights"
+      ],
+      "inventoryConfirmation": "Merchant confirms real authenticated store-owned stock: one new STANDARD-size unit per candidate.",
+      "sellingPrice": null,
+      "condition": "NEW",
+      "ownershipType": "STREET_CULTURE",
+      "size": "ONE_SIZE",
+      "sizeSystem": "STANDARD",
+      "quantity": 1,
+      "active": false
+    },
+    {
+      "reference": "FOLDER-LV-TOP-HANDLE",
+      "proposedName": "Louis Vuitton monogram top-handle bag",
+      "proposedBrand": "Louis Vuitton",
+      "proposedCategory": "Bags",
+      "imagePaths": [
+        "Lv/4.png"
+      ],
+      "reviewState": "REQUIRES_REVIEW",
+      "importable": false,
+      "reviewRequired": [
+        "exact model",
+        "selling price (MZN)",
+        "image rights"
+      ],
+      "inventoryConfirmation": "Merchant confirms real authenticated store-owned stock: one new STANDARD-size unit per candidate.",
+      "sellingPrice": null,
+      "condition": "NEW",
+      "ownershipType": "STREET_CULTURE",
+      "size": "ONE_SIZE",
+      "sizeSystem": "STANDARD",
+      "quantity": 1,
+      "active": false
+    },
+    {
+      "reference": "FOLDER-PRADA-BACKPACK",
+      "proposedName": "Prada black backpack",
+      "proposedBrand": "Prada",
+      "proposedCategory": "Bags",
+      "imagePaths": [
+        "prada/ChatGPT Image Sep 28, 2026, 02_49_05 PM.png"
+      ],
+      "reviewState": "REQUIRES_REVIEW",
+      "importable": false,
+      "reviewRequired": [
+        "exact model",
+        "selling price (MZN)",
+        "image rights"
+      ],
+      "inventoryConfirmation": "Merchant confirms real authenticated store-owned stock: one new STANDARD-size unit per candidate.",
+      "sellingPrice": null,
+      "condition": "NEW",
+      "ownershipType": "STREET_CULTURE",
+      "size": "ONE_SIZE",
+      "sizeSystem": "STANDARD",
+      "quantity": 1,
+      "active": false
+    },
+    {
+      "reference": "FOLDER-SC-PASSION-OUD",
+      "proposedName": "Street Culture Passion Oud",
+      "proposedBrand": "Street Culture",
+      "proposedCategory": "Fragrance",
+      "imagePaths": [
+        "perfum/1.png",
+        "perfum/2.png",
+        "perfum/3.png"
+      ],
+      "reviewState": "REQUIRES_REVIEW",
+      "importable": false,
+      "reviewRequired": [
+        "exact model",
+        "selling price (MZN)",
+        "image rights"
+      ],
+      "inventoryConfirmation": "Merchant confirms real authenticated store-owned stock: one new STANDARD-size unit per candidate.",
+      "sellingPrice": null,
+      "condition": "NEW",
+      "ownershipType": "STREET_CULTURE",
+      "size": "ONE_SIZE",
+      "sizeSystem": "STANDARD",
+      "quantity": 1,
+      "active": false
+    }
+  ],
+  "promotional": [
+    "perfum/4.png"
+  ],
+  "ungrouped": [],
+  "files": [
+    {
+      "path": "Lv/1.png",
+      "bytes": 2484755,
+      "sha256": "f5981ebed1868bb738b06866e94d211d0ba5e5fb9634dae3819b31467f227552",
+      "mimeType": "image/png",
+      "validImage": true,
+      "width": 1536,
+      "height": 1024
+    },
+    {
+      "path": "Lv/2.png",
+      "bytes": 2472581,
+      "sha256": "265bce2df3e1cb7edaa63d61e846438b32d151ab74e1fd2a1dfc5fce7698c79e",
+      "mimeType": "image/png",
+      "validImage": true,
+      "width": 1254,
+      "height": 1254
+    },
+    {
+      "path": "Lv/3.png",
+      "bytes": 2197658,
+      "sha256": "549f405da18b1b37f147340a5628421a68b6e527b3fbf2e1a63294b28e93f411",
+      "mimeType": "image/png",
+      "validImage": true,
+      "width": 1254,
+      "height": 1254
+    },
+    {
+      "path": "Lv/4.png",
+      "bytes": 2418347,
+      "sha256": "307e379ff28aaf176a5b014e2b9199f8a5181910809ba048f1d4084c0c429ebd",
+      "mimeType": "image/png",
+      "validImage": true,
+      "width": 1536,
+      "height": 1024
+    },
+    {
+      "path": "dior/1.png",
+      "bytes": 2754497,
+      "sha256": "9f32ea6a5a0c20873e2271a6c55e8d62acb6ae65895677c076691ffa29b1f2a7",
+      "mimeType": "image/png",
+      "validImage": true,
+      "width": 1536,
+      "height": 1024
+    },
+    {
+      "path": "hermes_birkin_bag/1.png",
+      "bytes": 2501156,
+      "sha256": "736251e9bb906a7d40a0317fd1a8eb65db23444be7e11bcb2549d049913c022b",
+      "mimeType": "image/png",
+      "validImage": true,
+      "width": 1536,
+      "height": 1024
+    },
+    {
+      "path": "hermes_birkin_bag/2.png",
+      "bytes": 2389419,
+      "sha256": "7ff82dadfc4986860f07498af8db19ad5e382df94df872bc0ec8318fe901026d",
+      "mimeType": "image/png",
+      "validImage": true,
+      "width": 1536,
+      "height": 1024
+    },
+    {
+      "path": "hermes_birkin_bag/3.png",
+      "bytes": 2726913,
+      "sha256": "c30c299aa1954b5e453682c73525245ba015e7da80306b13f9107ad88742a75e",
+      "mimeType": "image/png",
+      "validImage": true,
+      "width": 1536,
+      "height": 1024
+    },
+    {
+      "path": "perfum/1.png",
+      "bytes": 2367057,
+      "sha256": "d30e00a5824766aa4613048ca8040a7f5773900ac77996576ab47dbaaeb2a466",
+      "mimeType": "image/png",
+      "validImage": true,
+      "width": 1122,
+      "height": 1402
+    },
+    {
+      "path": "perfum/2.png",
+      "bytes": 1835140,
+      "sha256": "6ab959539a639a9ef44a1c1123c51b6f7c76899006ca712a5628bc397150d1b2",
+      "mimeType": "image/png",
+      "validImage": true,
+      "width": 1122,
+      "height": 1402
+    },
+    {
+      "path": "perfum/3.png",
+      "bytes": 2420179,
+      "sha256": "c67039235b268dc5269549fcbb310fee35cc1caf16d805a3b27c67ffd0306ef6",
+      "mimeType": "image/png",
+      "validImage": true,
+      "width": 1122,
+      "height": 1402
+    },
+    {
+      "path": "perfum/4.png",
+      "bytes": 2401655,
+      "sha256": "293e348795174512e7ddd8200a10a6c93794e537c756da4cfae3a57c208e7476",
+      "mimeType": "image/png",
+      "validImage": true,
+      "width": 1916,
+      "height": 821
+    },
+    {
+      "path": "prada/ChatGPT Image Sep 28, 2026, 02_49_05 PM.png",
+      "bytes": 1884995,
+      "sha256": "ed1934c97b838d8d5cd3454a49ce22627ed9daa742e44a894072451ac3ba1377",
+      "mimeType": "image/png",
+      "validImage": true,
+      "width": 1254,
+      "height": 1254
+    }
+  ]
+}

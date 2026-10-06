@@ -6,7 +6,7 @@ import { ArrowLeft, Heart, ShieldCheck, ShoppingBag } from 'lucide-react';
 import { useState } from 'react';
 import type { StoreProduct } from '@/data/storefront';
 import { useCommerce } from '@/features/commerce/CommerceProvider';
-import { formatPrice } from '@/lib/utils';
+import { DisplayPrice } from '@/features/currency/CurrencyProvider';
 import { useWishlist } from '@/features/commerce/useWishlist';
 
 export function ProductPurchasePanel({
@@ -46,7 +46,7 @@ export function ProductPurchasePanel({
             <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-black/45">{brand}</p>
             <h1 className="mt-3 max-w-[14ch] text-5xl font-black leading-[0.9] tracking-[-0.07em] sm:text-7xl">{name}</h1>
             {model && <p className="mt-4 text-sm text-black/50">{model}</p>}
-            <p className="mt-6 text-2xl font-black">{selected ? formatPrice(selected.price, 'MZN') : 'Currently unavailable'}</p>
+            <p className="mt-6 text-2xl font-black">{selected ? <DisplayPrice amount={selected.price} /> : 'Currently unavailable'}</p>
             {listings.length > 0 ? <>
               <div className="mt-8 flex items-end justify-between">
                 <h2 className="text-xs font-bold uppercase tracking-wider">Choose your exact piece</h2>
@@ -63,7 +63,7 @@ export function ProductPurchasePanel({
                 >
                   <span className="block text-sm font-bold">Size {listing.sizes[0]}</span>
                   <span className="mt-1 block text-xs opacity-70">{listing.condition} · {listing.ownershipType === 'STREET_CULTURE' ? 'Store stock' : 'Consignment'}</span>
-                  <span className="mt-2 block text-sm font-black">{formatPrice(listing.price, 'MZN')}</span>
+                  <span className="mt-2 block text-sm font-black"><DisplayPrice amount={listing.price} /></span>
                 </button>)}
               </div>
               <button type="button" onClick={() => selected && openQuickBuy(selected)} disabled={!selected} className="mt-6 inline-flex h-14 items-center justify-center gap-2 rounded-full bg-black px-7 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-acid hover:text-black disabled:opacity-50"><ShoppingBag className="h-4 w-4" /> Quick buy this listing</button>

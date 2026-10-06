@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { staffApiClient } from '@/lib/admin/access';
+import { adminApiClient } from '@/lib/admin/access';
 import { slugify, taxonomySchema } from '@/lib/schemas/admin-catalog.schema';
 
 export async function POST(request: Request) {
-  const access = await staffApiClient();
+  const access = await adminApiClient();
   if ('error' in access) return NextResponse.json({ error: access.error }, { status: access.status });
   const parsed = taxonomySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {

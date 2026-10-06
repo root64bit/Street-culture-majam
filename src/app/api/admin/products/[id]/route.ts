@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { staffApiClient } from '@/lib/admin/access';
+import { adminApiClient } from '@/lib/admin/access';
 import { productDraftSchema, slugify } from '@/lib/schemas/admin-catalog.schema';
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const access = await staffApiClient();
+  const access = await adminApiClient();
   if ('error' in access) return NextResponse.json({ error: access.error }, { status: access.status });
   const { id } = await params;
   if (!z.string().uuid().safeParse(id).success) {

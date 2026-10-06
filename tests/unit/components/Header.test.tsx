@@ -2,9 +2,10 @@ import { render, screen } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import { Header } from '@/components/layout/Header';
 import { CommerceProvider } from '@/features/commerce/CommerceProvider';
+import { CurrencyProvider } from '@/features/currency/CurrencyProvider';
 
 function renderHeader() {
-  return render(<CommerceProvider><Header /></CommerceProvider>);
+  return render(<CurrencyProvider><CommerceProvider><Header /></CommerceProvider></CurrencyProvider>);
 }
 
 describe('Header component', () => {

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import type { StoreProduct } from '@/data/storefront';
 import { formatPrice } from '@/lib/utils';
+import { DisplayPrice } from '@/features/currency/CurrencyProvider';
 import { cn } from '@/lib/utils';
 import { useCommerce, type CartLine } from '@/features/commerce/CommerceProvider';
 
@@ -775,6 +776,7 @@ function CheckoutSheet() {
               <div className="flex justify-between text-black/55"><span>Delivery</span><span>{formatPrice(shipping, 'MZN')}</span></div>
               <p className="text-xs text-black/45">{selectedShipping?.name ?? 'Choose delivery method'} · {address}, {city}, {province}</p>
               <div className="flex justify-between border-t border-black/10 pt-3 text-lg font-black"><span>Total</span><span>{formatPrice(total, 'MZN')}</span></div>
+              <p className="text-right text-xs text-black/45">Display estimate: <DisplayPrice amount={total} /> · M-Pesa charges MZN.</p>
             </div>
             {['waiting', 'processing'].includes(paymentState) && (
               <div className="mt-6 rounded-2xl border border-acid bg-acid/20 p-5 text-center" role="status" aria-live="polite">

@@ -206,7 +206,7 @@ test('signed-in customer sees only their own order and consignment status', asyn
   }
 });
 
-test('staff can create an unpublished catalog draft with a photo', async ({ page, request }) => {
+test('admin can create an unpublished catalog draft while staff remains read-only', async ({ page, request }) => {
   const url = process.env.LOCAL_SUPABASE_TEST_URL;
   const serviceKey = process.env.LOCAL_SUPABASE_TEST_SERVICE_ROLE_KEY;
   const anonKey = process.env.LOCAL_SUPABASE_TEST_ANON_KEY;
@@ -216,7 +216,8 @@ test('staff can create an unpublished catalog draft with a photo', async ({ page
 
   const admin = createClient(url!, serviceKey!, { auth: { persistSession: false } });
   const anon = createClient(url!, anonKey!, { auth: { persistSession: false } });
-  const email = `catalog-staff-${randomUUID()}@example.invalid`;
+  const email = `catalog-admin-${randomUUID()}@example.invalid`;
+  const staffEmail = `catalog-staff-${randomUUID()}@example.invalid`;
   const password = `Test-${randomBytes(12).toString('hex')}`;
   const customerEmail = `catalog-customer-${randomUUID()}@example.invalid`;
   const name = `Catalog draft ${randomUUID()}`;
@@ -226,9 +227,12 @@ test('staff can create an unpublished catalog draft with a photo', async ({ page
   const { data: customer, error: customerError } = await admin.auth.admin.createUser({ email: customerEmail, password, email_confirm: true });
   if (customerError || !customer.user) throw customerError ?? new Error('Customer user missing');
   const customerId = customer.user.id;
+  const { data: staff, error: staffError } = await admin.auth.admin.createUser({ email: staffEmail, password, email_confirm: true });
+  if (staffError || !staff.user) throw staffError ?? new Error('Staff user missing');
+  const staffId = staff.user.id;
   let productId: string | null = null;
   try {
-    const { error: roleError } = await admin.from('user_roles').insert({ user_id: userId, role: 'STAFF' });
+    const { error: roleError } = await admin.from('user_roles').insert([{ user_id: userId, role: 'ADMIN' }, { user_id: staffId, role: 'STAFF' }]);
     if (roleError) throw roleError;
     await page.goto('/auth/sign-in');
     await page.getByLabel('Email Address').fill(customerEmail);
@@ -246,6 +250,17 @@ test('staff can create an unpublished catalog draft with a photo', async ({ page
       return [productResponse.status, listingResponse.status];
     });
     expect(customerPosts).toEqual([403, 403]);
+    await page.goto('/admin/products/new');
+    await expect(page.getByText('This page could not be found.')).toBeVisible();
+
+    await page.goto('/auth/sign-in');
+    await page.getByLabel('Email Address').fill(staffEmail);
+    await page.getByLabel('Password').fill(password);
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await page.waitForURL('**/account');
+    await page.goto('/admin/products');
+    await expect(page.getByRole('heading', { name: 'PRODUCTS.' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'New draft' })).toHaveCount(0);
     await page.goto('/admin/products/new');
     await expect(page.getByText('This page could not be found.')).toBeVisible();
 
@@ -274,7 +289,7 @@ test('staff can create an unpublished catalog draft with a photo', async ({ page
     productId = product.id;
     await page.goto('/admin/products');
     await expect(page.getByText(name)).toBeVisible();
-    await expect(page.getByRole('img', { name: `${name} concept image` })).toBeVisible();
+    await expect(page.getByRole('img', { name: `${name} product image` })).toBeVisible();
     await page.goto(`/admin/products/${productId}`);
     expect(product.active).toBe(false);
     expect(product.currency).toBe('MZN');
@@ -320,5 +335,6 @@ test('staff can create an unpublished catalog draft with a photo', async ({ page
     }
     await admin.auth.admin.deleteUser(userId);
     await admin.auth.admin.deleteUser(customerId);
+    await admin.auth.admin.deleteUser(staffId);
   }
 });

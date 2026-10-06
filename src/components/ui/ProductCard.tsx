@@ -2,6 +2,7 @@ import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { formatPrice } from '@/lib/utils';
+import { DisplayPrice } from '@/features/currency/CurrencyProvider';
 import { VerifiedBadge } from './VerifiedBadge';
 
 export interface ProductCardProps {
@@ -80,7 +81,7 @@ export function ProductCard({
               ASKING PRICE
             </span>
             <span className="text-base font-bold font-mono tracking-tight text-white group-hover:text-acid transition-colors">
-              {formatPrice(price, currency)}
+              {currency === 'MZN' ? <DisplayPrice amount={price} /> : formatPrice(price, currency)}
             </span>
           </div>
 

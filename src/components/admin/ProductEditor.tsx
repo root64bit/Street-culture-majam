@@ -22,6 +22,7 @@ type Draft = {
   colorway: string | null;
   release_year: number | null;
   gender: string | null;
+  active: boolean;
   product_media: Media[];
 };
 
@@ -176,9 +177,10 @@ export function ProductEditor({ product, brands, categories, stock = [] }: { pro
         <Link href="/admin/products" className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-black/50 hover:text-black"><ArrowLeft className="h-4 w-4" /> Products</Link>
         <p className="mt-10 text-[10px] font-bold uppercase tracking-[0.2em] text-[#065f46]">Unpublished catalog record</p>
         <h1 className="mt-2 text-4xl font-black tracking-[-0.06em] sm:text-6xl">{product ? 'EDIT DRAFT.' : 'NEW PRODUCT.'}</h1>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-black/55">Adding a product does not create sellable stock or verify authenticity. Pricing, condition, size, physical inspection, and publication remain separate.</p>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-black/55">{product?.active ? 'This product has a live listing. Unpublish it below before changing catalog details.' : 'Adding a product does not create sellable stock or verify authenticity. Pricing, condition, size, physical inspection, and publication remain separate.'}</p>
 
         <form onSubmit={save} className="mt-9 space-y-6">
+          <fieldset disabled={Boolean(product?.active)} className="space-y-6">
           <div className="grid gap-5 rounded-[2rem] border border-black/10 bg-white p-6 sm:grid-cols-2 sm:p-8">
             <label className={`space-y-2 sm:col-span-2 ${label}`}>Product name *<input className={field} value={name} onChange={(event) => setName(event.target.value)} minLength={3} maxLength={160} required placeholder="e.g. Prada Re-Nylon shoulder bag" /></label>
             <div className="space-y-2"><label htmlFor="brand" className={label}>Brand *</label><select id="brand" className={field} value={brandId} onChange={(event) => setBrandId(event.target.value)} required><option value="">Choose brand</option>{brandOptions.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select><div className="flex gap-2"><input aria-label="New brand name" className={field} value={newBrand} onChange={(event) => setNewBrand(event.target.value)} placeholder="New brand" /><button type="button" onClick={() => void addTaxonomy('brand')} disabled={busy || !newBrand.trim()} className="rounded-xl border border-black/15 px-3 disabled:opacity-40" aria-label="Add brand"><Plus className="h-4 w-4" /></button></div></div>
@@ -198,12 +200,13 @@ export function ProductEditor({ product, brands, categories, stock = [] }: { pro
             <input type="file" multiple accept="image/png,image/jpeg,image/webp" aria-label="Product photos" onChange={(event) => setFiles(Array.from(event.target.files ?? []))} className="mt-5 block w-full text-sm file:mr-4 file:rounded-full file:border-0 file:bg-black file:px-5 file:py-3 file:text-xs file:font-bold file:uppercase file:text-white" />
             {files.length > 0 && <p className="mt-2 text-xs text-black/50">{files.length} photo{files.length === 1 ? '' : 's'} selected for upload.</p>}
           </div>
+          </fieldset>
 
           {error && <p role="alert" className="rounded-2xl bg-red-50 p-4 text-sm text-red-800">{error} {productId && !product && <Link href={`/admin/products/${productId}`} className="underline">Open the saved draft</Link>}</p>}
           {success && <p role="status" className="rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-800">{success}</p>}
-          <button type="submit" disabled={busy} className="rounded-full bg-black px-8 py-4 text-xs font-bold uppercase tracking-wider text-white hover:bg-[#065f46] disabled:opacity-50">{busy ? 'Saving…' : productId ? 'Save draft' : 'Create draft'}</button>
+          <button type="submit" disabled={busy || Boolean(product?.active)} className="rounded-full bg-black px-8 py-4 text-xs font-bold uppercase tracking-wider text-white hover:bg-[#065f46] disabled:opacity-50">{busy ? 'Saving…' : productId ? 'Save draft' : 'Create draft'}</button>
         </form>
-        {product && <StockDraftForm productId={product.id} initialStock={stock} />}
+        {product && <StockDraftForm productId={product.id} initialStock={stock} productActive={product.active} />}
       </div>
     </section>
   );
