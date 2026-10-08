@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
+import { ConsignmentResponseForm } from '@/components/commerce/ConsignmentResponseForm';
 import { createClient } from '@/lib/supabase/server';
 import { consignmentLabels } from '@/lib/commerce/labels';
 import { formatDate, formatPrice } from '@/lib/utils';
@@ -23,6 +24,18 @@ export default async function ConsignmentDetailPage({ params }: { params: Promis
       .select('id, listing_id, status, net_amount, currency, created_at, processed_at')
       .eq('seller_id', user.id).in('listing_id', listingIds)
     : { data: [] };
+  const { data: storeContext } = await supabase.rpc('operational_store_context');
+  const contextObj =
+    storeContext && typeof storeContext === 'object' && !Array.isArray(storeContext)
+      ? (storeContext as {
+          store?: { supportEmail?: string; supportPhone?: string };
+          consignment?: { returnInstructions?: string };
+        })
+      : null;
+  const returnInstructions = contextObj?.consignment?.returnInstructions;
+  const supportContact = [contextObj?.store?.supportEmail, contextObj?.store?.supportPhone]
+    .filter(Boolean)
+    .join(' · ');
   const events = [
     { label: 'Submitted', date: item.submitted_at ?? item.created_at },
     item.approved_at && { label: 'Approved', date: item.approved_at },
@@ -44,6 +57,14 @@ export default async function ConsignmentDetailPage({ params }: { params: Promis
           <section className="rounded-[1.5rem] bg-white p-6 shadow-sm sm:p-8"><h2 className="text-xs font-bold uppercase tracking-wider">Piece details</h2><dl className="mt-6 space-y-4 text-sm"><div className="flex justify-between gap-4"><dt className="text-black/45">Condition</dt><dd className="font-bold">{item.condition}</dd></div><div className="flex justify-between gap-4"><dt className="text-black/45">Asking price</dt><dd className="font-bold">{formatPrice(Number(item.expected_price), item.currency)}</dd></div><div className="flex justify-between gap-4"><dt className="text-black/45">Current status</dt><dd className="font-bold">{consignmentLabels[item.status] ?? 'In progress'}</dd></div>{(payouts ?? []).map((payout) => <div key={payout.id} className="flex justify-between gap-4 border-t border-black/10 pt-4"><dt className="text-black/45">Seller payout · {payout.status === 'PAID' ? 'paid' : 'pending'}</dt><dd className="font-bold">{formatPrice(Number(payout.net_amount), payout.currency)}</dd></div>)}</dl></section>
           <section className="rounded-[1.5rem] bg-[#efede6] p-6 sm:p-8"><h2 className="text-xs font-bold uppercase tracking-wider">Status timeline</h2><ol className="mt-6 space-y-5">{events.map((event, index) => <li key={`${event.label}-${index}`} className="flex gap-3 text-sm"><span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-black" /><div><p className="font-bold">{event.label}</p><p className="mt-1 text-xs text-black/45">{formatDate(event.date)}</p></div></li>)}</ol></section>
         </div>
+        {['REJECTED', 'AUTHENTICATION_FAILED', 'RETURN_REQUESTED', 'RETURNED'].includes(item.status) && returnInstructions && (
+          <section className="mt-6 rounded-[1.5rem] bg-white p-6 text-sm shadow-sm sm:p-8">
+            <h2 className="text-xs font-bold uppercase tracking-wider">Return instructions</h2>
+            <p className="mt-3 text-black/70">{returnInstructions}</p>
+            {supportContact && <p className="mt-2 text-xs text-black/50">{supportContact}</p>}
+          </section>
+        )}
+        {item.status === 'MORE_INFORMATION_REQUIRED' && <ConsignmentResponseForm id={item.id} />}
       </div>
     </main>
   );

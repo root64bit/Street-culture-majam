@@ -24,7 +24,7 @@ export function Header() {
 
   return (
     <header className="fixed inset-x-0 top-0 z-50 px-3 pt-3 sm:px-5 sm:pt-4">
-      <div className="mx-auto flex h-16 max-w-[1500px] items-center justify-between rounded-2xl border border-white/35 bg-white/78 px-4 text-black shadow-[0_12px_50px_rgba(0,0,0,0.08)] backdrop-blur-2xl sm:px-6">
+      <div className="mx-auto flex h-16 max-w-[1500px] items-center justify-between rounded-2xl border border-black/10 bg-white/95 px-4 text-black shadow-[0_12px_50px_rgba(0,0,0,0.08)] backdrop-blur-2xl sm:px-6">
         <Link href="/" className="group shrink-0" aria-label="Street Culture home">
           <Image
             src="/brand/street-culture-horizontal.png"

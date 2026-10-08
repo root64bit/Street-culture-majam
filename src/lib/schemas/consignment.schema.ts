@@ -8,7 +8,7 @@ export const consignmentSubmissionSchema = z.object({
   sizeSystem: z.string().default('US'),
   condition: z.string().min(1, 'Condition is required'),
   expectedPrice: z.number().positive('Expected price must be greater than 0'),
-  currency: z.string().default('USD'),
+  currency: z.literal('MZN').default('MZN'),
   purchaseYear: z.number().int().min(1970).max(new Date().getFullYear()).optional(),
   deliveryMethod: z.enum(['SHIP_TO_VAULT', 'DROP_OFF']).default('SHIP_TO_VAULT'),
 });

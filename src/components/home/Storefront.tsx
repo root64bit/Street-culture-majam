@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   ArrowDown,
@@ -11,6 +11,8 @@ import {
   ChevronDown,
   Heart,
   MoveRight,
+  Pause,
+  Play,
   ShoppingBag,
   Truck,
   ShieldCheck,
@@ -39,6 +41,14 @@ export function Storefront({
   const { saved: wishlist, toggle: toggleWishlist } = useWishlist();
   const { openQuickBuy } = useCommerce();
   const mostWantedRef = useRef<HTMLDivElement>(null);
+  const interactionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [activeSlide, setActiveSlide] = useState(0);
+  const [playing, setPlaying] = useState(true);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [interacting, setInteracting] = useState(false);
+  const [inView, setInView] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState(false);
 
   const visibleProducts = useMemo(
     () =>
@@ -53,6 +63,71 @@ export function Storefront({
     label: item.name.toUpperCase(),
     position: ['46% 62%', '74% 36%', '58% 40%', '52% 25%'][index % 4],
   }));
+
+  const goToSlide = useCallback((index: number, behavior: ScrollBehavior = 'smooth') => {
+    const rail = mostWantedRef.current;
+    if (!rail || !visibleProducts.length) return;
+    const next = (index + visibleProducts.length) % visibleProducts.length;
+    const card = rail.querySelectorAll<HTMLElement>('article').item(next);
+    if (!card) return;
+    const left = card.getBoundingClientRect().left - rail.getBoundingClientRect().left + rail.scrollLeft;
+    rail.scrollTo({ left, behavior: reducedMotion || index < 0 || index >= visibleProducts.length ? 'auto' : behavior });
+    setActiveSlide(next);
+  }, [reducedMotion, visibleProducts.length]);
+
+  useEffect(() => {
+    const rail = mostWantedRef.current;
+    if (!rail) return;
+    rail.scrollTo({ left: 0, behavior: 'auto' });
+    setActiveSlide(0);
+  }, [category]);
+
+  useEffect(() => {
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const sync = () => setReducedMotion(query.matches);
+    sync();
+    query.addEventListener('change', sync);
+    return () => query.removeEventListener('change', sync);
+  }, []);
+
+  useEffect(() => {
+    const rail = mostWantedRef.current;
+    if (!rail) return;
+    const observer = new IntersectionObserver(([entry]) => setInView(entry.isIntersecting), { threshold: 0.3 });
+    observer.observe(rail);
+    return () => observer.disconnect();
+  }, [visibleProducts.length]);
+
+  useEffect(() => {
+    if (!playing || hovered || focused || interacting || !inView || reducedMotion || visibleProducts.length < 2) return;
+    const timer = window.setInterval(() => goToSlide(activeSlide + 1), 4800);
+    return () => window.clearInterval(timer);
+  }, [activeSlide, focused, goToSlide, hovered, inView, interacting, playing, reducedMotion, visibleProducts.length]);
+
+  useEffect(() => () => {
+    if (interactionTimerRef.current) clearTimeout(interactionTimerRef.current);
+  }, []);
+
+  function pauseAfterTouch() {
+    setInteracting(true);
+    if (interactionTimerRef.current) clearTimeout(interactionTimerRef.current);
+    interactionTimerRef.current = setTimeout(() => setInteracting(false), 8000);
+  }
+
+  function updateSlideFromScroll() {
+    const rail = mostWantedRef.current;
+    if (!rail) return;
+    const cards = rail.querySelectorAll('article');
+    if (!cards.length) return;
+    const left = rail.getBoundingClientRect().left;
+    let closest = 0;
+    let distance = Number.POSITIVE_INFINITY;
+    for (let index = 0; index < cards.length; index++) {
+      const offset = Math.abs(cards.item(index).getBoundingClientRect().left - left);
+      if (offset < distance) { distance = offset; closest = index; }
+    }
+    setActiveSlide(closest);
+  }
 
   return (
     <div className="bg-[#fbfaf6] text-black">
@@ -100,64 +175,88 @@ export function Storefront({
 
       <TrustStrip />
 
-      <section id="new" className="scroll-mt-24 px-4 py-16 sm:px-6 sm:py-24 lg:px-10">
-        <div className="mx-auto max-w-[1500px]">
-          <SectionHeading eyebrow="THE EDIT" title="MOST WANTED" action="View all" href="/new" />
-          <div className="mb-7 flex flex-wrap gap-2" aria-label="Filter products by category">
+      <section id="new" className="relative scroll-mt-24 overflow-hidden bg-[#0b1512] px-4 py-16 text-white sm:px-6 sm:py-24 lg:px-10">
+        <div aria-hidden="true" className="pointer-events-none absolute -right-40 -top-72 h-[750px] w-[750px] rounded-full bg-[radial-gradient(circle,rgba(6,95,70,0.38),transparent_67%)]" />
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(255,255,255,.08)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.08)_1px,transparent_1px)] [background-size:96px_96px]" />
+        <div className="relative mx-auto max-w-[1500px]">
+          <div className="flex flex-col justify-between gap-8 border-b border-white/15 pb-9 lg:flex-row lg:items-end">
+            <div>
+              <p className="inline-flex items-center gap-3 text-[10px] font-bold uppercase tracking-[0.24em] text-acid">
+                <span className="h-2 w-2 rounded-full bg-acid shadow-[0_0_18px_#c6ff00]" /> LIVE FROM THE CULTURE <span className="text-white/35">/ 001</span>
+              </p>
+              <h2 className="mt-5 max-w-[12ch] text-[clamp(3.7rem,9vw,9rem)] font-black leading-[0.78] tracking-[-0.085em]">
+                THE NEXT <span className="text-acid">OBSESSION.</span>
+              </h2>
+            </div>
+            <div className="max-w-xs lg:pb-1">
+              <p className="text-sm leading-6 text-white/60">One-of-one finds, always in motion. Swipe through every live piece in the edit.</p>
+              <Link href="/new" className="mt-5 inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-acid transition hover:gap-4">Explore the full drop <ArrowUpRight className="h-4 w-4" /></Link>
+            </div>
+          </div>
+
+          <div className="mt-8 flex flex-wrap items-center gap-2" aria-label="Filter products by category">
             {[{ value: 'all', label: 'All pieces' }, ...categoryCards.map((item) => ({ value: item.category, label: item.label }))].map((item) => (
               <button
                 key={item.value}
                 type="button"
                 onClick={() => setCategory(item.value as ProductCategory | 'all')}
                 aria-pressed={category === item.value}
-                className={cn('rounded-full border px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.12em] transition', category === item.value ? 'border-black bg-black text-white' : 'border-black/15 bg-white hover:border-black')}
+                className={cn('rounded-full border px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.12em] transition', category === item.value ? 'border-acid bg-acid text-black' : 'border-white/20 bg-white/5 text-white/70 hover:border-white/60 hover:text-white')}
               >
                 {item.label}
               </button>
             ))}
-            <div className="ml-auto hidden items-center gap-2 sm:flex">
-              <button
-                type="button"
-                onClick={() => mostWantedRef.current?.scrollBy({ left: -360, behavior: 'smooth' })}
-                className="grid h-10 w-10 place-items-center rounded-full border border-black/15 bg-white transition hover:border-black hover:bg-black hover:text-white"
-                aria-label="Previous Most Wanted products"
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => mostWantedRef.current?.scrollBy({ left: 360, behavior: 'smooth' })}
-                className="grid h-10 w-10 place-items-center rounded-full border border-black/15 bg-white transition hover:border-black hover:bg-black hover:text-white"
-                aria-label="Next Most Wanted products"
-              >
-                <ArrowRight className="h-4 w-4" />
-              </button>
+            <div className="ml-auto flex items-center gap-2">
+              <button type="button" onClick={() => goToSlide(activeSlide - 1)} disabled={visibleProducts.length < 2}
+                className="grid h-11 w-11 place-items-center rounded-full border border-white/25 text-white transition hover:border-acid hover:bg-acid hover:text-black disabled:opacity-40"
+                aria-label="Previous Most Wanted products"><ArrowLeft className="h-4 w-4" /></button>
+              <button type="button" onClick={() => goToSlide(activeSlide + 1)} disabled={visibleProducts.length < 2}
+                className="grid h-11 w-11 place-items-center rounded-full bg-acid text-black transition hover:bg-white disabled:opacity-40"
+                aria-label="Next Most Wanted products"><ArrowRight className="h-4 w-4" /></button>
             </div>
           </div>
-          {visibleProducts.length ? (
-            <div>
-              <div
-                ref={mostWantedRef}
-                className="-mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:-mx-6 sm:gap-5 sm:px-6 lg:-mx-10 lg:gap-6 lg:px-10"
-                role="region"
-                aria-roledescription="carousel"
-                aria-label="Most Wanted products"
-              >
-                {visibleProducts.map((product) => (
-                  <ProductTile
-                    key={product.id}
-                    product={product}
-                    favorite={wishlist.includes(product.productId ?? product.id)}
-                    onFavorite={() => void toggleWishlist(product.productId ?? product.id)}
-                    onQuickBuy={() => openQuickBuy(product)}
-                    className="w-[76vw] max-w-[340px] shrink-0 snap-start sm:w-[42vw] lg:w-[calc((100%-4.5rem)/4)]"
-                  />
-                ))}
-              </div>
+
+          {visibleProducts.length ? <>
+            <div
+              ref={mostWantedRef}
+              onScroll={updateSlideFromScroll}
+              onMouseEnter={() => setHovered(true)}
+              onMouseLeave={() => setHovered(false)}
+              onFocusCapture={() => setFocused(true)}
+              onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false); }}
+              onTouchStart={pauseAfterTouch}
+              onTouchEnd={pauseAfterTouch}
+              className="-mx-4 mt-7 flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain px-4 pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:-mx-6 sm:gap-5 sm:px-6 lg:-mx-10 lg:gap-6 lg:px-10"
+              role="region"
+              aria-roledescription="carousel"
+              aria-label="Most Wanted products"
+              tabIndex={0}
+            >
+              {visibleProducts.map((product, index) => (
+                <ShowcaseTile
+                  key={product.id}
+                  product={product}
+                  index={index}
+                  total={visibleProducts.length}
+                  favorite={wishlist.includes(product.productId ?? product.id)}
+                  onFavorite={() => void toggleWishlist(product.productId ?? product.id)}
+                  onQuickBuy={() => openQuickBuy(product)}
+                />
+              ))}
+              <div aria-hidden="true" className="w-[calc(100%-min(82vw,430px))] shrink-0 sm:w-[calc(100%-min(47vw,430px))] lg:w-[calc(100%-min(31vw,430px))]" />
             </div>
-          ) : (
-            <p className="rounded-3xl bg-[#f0eee8] p-10 text-center text-sm text-black/55">More pieces are being added to this edit.</p>
-          )}
+            <div className="mt-7 flex items-center gap-5 border-t border-white/15 pt-5">
+              <p className="min-w-20 font-mono text-xs tracking-widest text-white/65"><span className="text-acid">{String(activeSlide + 1).padStart(2, '0')}</span> / {String(visibleProducts.length).padStart(2, '0')}</p>
+              <div role="progressbar" aria-label="Carousel position" aria-valuemin={1} aria-valuemax={visibleProducts.length} aria-valuenow={activeSlide + 1}
+                className="h-0.5 flex-1 overflow-hidden bg-white/20"><div className="h-full bg-acid transition-[width] duration-500 motion-reduce:transition-none" style={{ width: `${((activeSlide + 1) / visibleProducts.length) * 100}%` }} /></div>
+              {reducedMotion ? <span className="text-[10px] uppercase tracking-[0.13em] text-white/50">Manual motion</span> : <button type="button" onClick={() => setPlaying((value) => !value)}
+                className="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.13em] text-white/70 transition hover:text-acid"
+                aria-label={playing ? 'Pause carousel' : 'Play carousel'}>
+                {playing ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+                <span className="hidden sm:inline">{playing ? 'Pause motion' : 'Play motion'}</span>
+              </button>}
+            </div>
+          </> : <p className="mt-7 rounded-3xl border border-white/15 bg-white/5 p-10 text-center text-sm text-white/60">More pieces are being added to this edit.</p>}
         </div>
       </section>
 
@@ -325,6 +424,59 @@ export function Storefront({
       </section>
     </div>
   );
+}
+
+function ShowcaseTile({
+  product,
+  index,
+  total,
+  favorite,
+  onFavorite,
+  onQuickBuy,
+}: {
+  product: StoreProduct;
+  index: number;
+  total: number;
+  favorite: boolean;
+  onFavorite: () => void;
+  onQuickBuy: () => void;
+}) {
+  return <article className="group relative w-[82vw] max-w-[430px] shrink-0 snap-start sm:w-[47vw] lg:w-[31vw]">
+    <div className="relative aspect-[0.78] overflow-hidden rounded-[1.7rem] bg-[#25332e] ring-1 ring-white/15 sm:rounded-[2rem]">
+      <Image src={product.image} alt={product.name} fill sizes="(max-width: 640px) 82vw, (max-width: 1024px) 47vw, 31vw"
+        className="object-cover transition-transform duration-700 motion-reduce:transition-none group-hover:scale-[1.06]"
+        style={{ objectPosition: product.imagePosition }} />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/15 to-black/15" />
+      <div className="absolute inset-x-4 top-4 flex items-start justify-between gap-3 sm:inset-x-5 sm:top-5">
+        <span className="rounded-full border border-white/40 bg-black/35 px-3 py-2 font-mono text-[9px] tracking-[0.14em] text-white backdrop-blur-xl">
+          SC / {String(index + 1).padStart(2, '0')} — {String(total).padStart(2, '0')}
+        </span>
+        <button type="button" onClick={onFavorite} aria-label={favorite ? `Remove ${product.name} from wishlist` : `Add ${product.name} to wishlist`}
+          aria-pressed={favorite} className="grid h-10 w-10 place-items-center rounded-full border border-white/40 bg-black/35 text-white backdrop-blur-xl transition hover:border-acid hover:bg-acid hover:text-black">
+          <Heart className={cn('h-4 w-4', favorite && 'fill-current')} />
+        </button>
+      </div>
+      <div className="absolute inset-x-5 bottom-5 sm:inset-x-7 sm:bottom-7">
+        <div className="mb-3 flex items-center gap-2 text-[9px] font-bold uppercase tracking-[0.18em] text-acid">
+          <span className="h-1.5 w-1.5 rounded-full bg-acid" /> VERIFIED PIECE <span className="text-white/50">/ {product.categoryName ?? product.category}</span>
+        </div>
+        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/60">{product.brand}</p>
+        <h3 className="mt-1 line-clamp-2 min-h-[2.1em] text-[clamp(1.7rem,3.3vw,2.9rem)] font-black leading-[0.97] tracking-[-0.055em] text-white">{product.name}</h3>
+        <div className="mt-4 flex items-end justify-between gap-3 border-t border-white/30 pt-3">
+          <p className="text-lg font-black tracking-tight text-white"><DisplayPrice amount={product.price} /></p>
+          <p className="max-w-[40%] truncate text-right text-[10px] text-white/55">{product.sizes.join(' · ')}</p>
+        </div>
+        <div className="mt-4 flex gap-2">
+          <Link href={`/products/${product.slug}`} className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-acid px-3 text-[9px] font-black uppercase tracking-[0.12em] text-black transition hover:bg-white">
+            View piece <ArrowUpRight className="h-3.5 w-3.5" />
+          </Link>
+          <button type="button" onClick={onQuickBuy} className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-full border border-white/50 bg-white/10 px-3 text-[9px] font-black uppercase tracking-[0.12em] text-white backdrop-blur transition hover:bg-white hover:text-black">
+            <ShoppingBag className="h-3.5 w-3.5" /> Quick buy
+          </button>
+        </div>
+      </div>
+    </div>
+  </article>;
 }
 
 function ProductTile({

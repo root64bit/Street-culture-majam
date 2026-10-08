@@ -21,7 +21,7 @@ export default function NewConsignmentPage() {
   const [sizeSystem, setSizeSystem] = useState('US');
   const [condition, setCondition] = useState('NEW / UNWORN');
   const [expectedPrice, setExpectedPrice] = useState('');
-  const [currency, setCurrency] = useState('USD');
+  const currency = 'MZN';
   const [purchaseYear, setPurchaseYear] = useState(new Date().getFullYear().toString());
   const [deliveryMethod, setDeliveryMethod] = useState<'SHIP_TO_VAULT' | 'DROP_OFF'>('SHIP_TO_VAULT');
   const [error, setError] = useState<string | null>(null);
@@ -199,18 +199,7 @@ export default function NewConsignmentPage() {
                 required
               />
 
-              <Select
-                label="Currency"
-                value={currency}
-                onChange={(e) => setCurrency(e.target.value)}
-                options={[
-                  { value: 'USD', label: 'USD ($)' },
-                  { value: 'EUR', label: 'EUR (€)' },
-                  { value: 'GBP', label: 'GBP (£)' },
-                  { value: 'ZAR', label: 'ZAR (R)' },
-                  { value: 'MZN', label: 'MZN (MT)' },
-                ]}
-              />
+              <p className="text-sm text-white/70">Expected sale price is in Mozambican meticais (MZN). Other currencies on the storefront are display estimates only.</p>
 
               <Input
                 label="Purchase Year"

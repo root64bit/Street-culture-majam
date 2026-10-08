@@ -1,18 +1,22 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { adminApiClient } from '@/lib/admin/access';
+import { capabilityApiClient } from '@/lib/admin/access';
 import { inventoryDraftSchema } from '@/lib/schemas/admin-inventory.schema';
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const access = await adminApiClient();
-  if ('error' in access) return NextResponse.json({ error: access.error }, { status: access.status });
+  const access = await capabilityApiClient(['inventory.manage']);
+  if ('error' in access)
+    return NextResponse.json({ error: access.error }, { status: access.status });
   const { id } = await params;
   if (!z.string().uuid().safeParse(id).success) {
     return NextResponse.json({ error: 'Invalid product ID.' }, { status: 400 });
   }
   const parsed = inventoryDraftSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Check the item details.' }, { status: 400 });
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message ?? 'Check the item details.' },
+      { status: 400 }
+    );
   }
 
   const item = parsed.data;

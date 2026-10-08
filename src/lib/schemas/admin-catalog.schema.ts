@@ -9,8 +9,14 @@ export const productDraftSchema = z.object({
   description: optionalText(3000),
   model: optionalText(120),
   sku: optionalText(100),
+  styleCode: optionalText(100),
   colorway: optionalText(120),
-  releaseYear: z.number().int().min(1900).max(new Date().getFullYear() + 1).nullable(),
+  releaseYear: z
+    .number()
+    .int()
+    .min(1900)
+    .max(new Date().getFullYear() + 1)
+    .nullable(),
   gender: z.enum(['MEN', 'WOMEN', 'UNISEX', 'KIDS']).nullable(),
 });
 
@@ -20,6 +26,11 @@ export const taxonomySchema = z.object({
 });
 
 export function slugify(value: string) {
-  return value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 100);
+  return value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 100);
 }

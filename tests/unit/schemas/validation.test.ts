@@ -43,10 +43,16 @@ describe('Zod Validation Schemas', () => {
       sizeSystem: 'US',
       condition: 'NEW / UNWORN',
       expectedPrice: 420.0,
-      currency: 'USD',
+      currency: 'MZN',
       deliveryMethod: 'SHIP_TO_VAULT',
     });
     expect(valid.success).toBe(true);
+
+    const foreignCurrency = consignmentSubmissionSchema.safeParse({
+      brandName: 'Jordan', productName: 'Air Jordan 4', size: '10.5',
+      condition: 'NEW', expectedPrice: 420, currency: 'USD',
+    });
+    expect(foreignCurrency.success).toBe(false);
 
     const invalidPrice = consignmentSubmissionSchema.safeParse({
       brandName: 'Jordan',

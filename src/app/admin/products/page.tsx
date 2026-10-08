@@ -1,47 +1,17 @@
 import Link from 'next/link';
-import Image from 'next/image';
-import { ArrowLeft, ArrowRight, Plus } from 'lucide-react';
-import { requireStaffPage } from '@/lib/admin/access';
-
-export default async function AdminProductsPage() {
-  const { supabase } = await requireStaffPage('/admin/products');
-  const { data: canManage } = await supabase.rpc('is_admin');
-  const { data: products, error } = await supabase.from('products')
-    .select('id, name, slug, active, created_at, brand:brands(name), category:categories(name), product_media(id, storage_path, sort_order)')
-    .order('created_at', { ascending: false }).limit(200);
-  if (error) throw new Error('Products are temporarily unavailable.');
-
-  return (
-    <section className="min-h-screen bg-[#fbfaf6] px-4 pb-24 pt-32 text-black sm:px-6 lg:px-10">
-      <div className="mx-auto max-w-5xl">
-        <Link href="/admin" className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-black/50 hover:text-black"><ArrowLeft className="h-4 w-4" /> Admin</Link>
-        <div className="mt-8 flex flex-wrap items-end justify-between gap-5">
-          <div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#065f46]">Catalog workspace</p><h1 className="mt-2 text-5xl font-black tracking-[-0.07em] sm:text-7xl">PRODUCTS.</h1><p className="mt-3 text-sm text-black/55">Drafts are invisible to shoppers and cannot be bought.</p></div>
-          <div className="flex flex-wrap gap-2">{canManage && <Link href="/admin/products/new" className="inline-flex items-center gap-2 rounded-full bg-black px-6 py-3 text-xs font-bold uppercase tracking-wider text-white hover:bg-[#065f46]"><Plus className="h-4 w-4" /> New draft</Link>}{canManage && <Link href="/admin/imports" className="inline-flex items-center gap-2 rounded-full border border-black px-6 py-3 text-xs font-bold uppercase tracking-wider hover:bg-black hover:text-white">Bulk import</Link>}</div>
-        </div>
-
-        <div className="mt-10 overflow-hidden rounded-[2rem] border border-black/10 bg-white">
-          {!products?.length ? <p className="p-8 text-sm text-black/55">No products yet. Create the first draft to begin.</p> : products.map((product) => (
-            <div key={product.id} className="flex flex-wrap items-center justify-between gap-4 border-b border-black/10 p-5 last:border-b-0 sm:px-7">
-              <div className="flex min-w-0 items-center gap-4">
-                {product.product_media.length > 0 ? (
-                  <Image
-                    src={supabase.storage.from('product-images').getPublicUrl([...product.product_media].sort((a, b) => a.sort_order - b.sort_order)[0].storage_path).data.publicUrl}
-                    alt={`${product.name} product image`}
-                    width={72}
-                    height={72}
-                    unoptimized
-                    className="h-[72px] w-[72px] shrink-0 rounded-xl bg-[#f5f4f0] object-cover"
-                  />
-                ) : <div className="h-[72px] w-[72px] shrink-0 rounded-xl bg-[#f5f4f0]" aria-hidden="true" />}
-                <div className="min-w-0"><p className="font-bold">{product.name}</p><p className="mt-1 text-xs text-black/50">{product.brand?.name} · {product.category?.name} · {product.product_media.length} photo{product.product_media.length === 1 ? '' : 's'}</p></div>
-              </div>
-              <div className="flex items-center gap-4"><span className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${product.active ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'}`}>{product.active ? 'Active record' : 'Draft'}</span>{canManage && <Link href={`/admin/products/${product.id}`} className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider hover:text-[#065f46]">Edit <ArrowRight className="h-4 w-4" /></Link>}</div>
-            </div>
-          ))}
-        </div>
-        {products?.length === 200 && <p className="mt-4 text-sm text-black/50">Showing the 200 most recent products.</p>}
-      </div>
-    </section>
-  );
+import {requireCapabilitiesPage} from '@/lib/admin/access';
+import {catalogFilters,type CatalogFilters} from '@/lib/admin/catalog.service';
+import {AdminProductTable} from '@/components/admin/AdminProductTable';
+import {AdminPagination} from '@/components/admin/AdminPagination';
+export default async function AdminProductsPage({searchParams}:{searchParams:Promise<CatalogFilters>}) {
+  const {supabase}=await requireCapabilitiesPage('/admin/products',['products.read']);
+  const filters=catalogFilters(await searchParams);const pageSize=30;
+  const [result,permissions,brands,categories]=await Promise.all([
+    supabase.rpc('admin_catalog_products',{...filters.rpc,page_offset:(filters.page-1)*pageSize,page_limit:pageSize}),
+    supabase.rpc('my_capabilities'),supabase.from('brands').select('id,name').order('name').limit(500),supabase.from('categories').select('id,name').order('name').limit(500),
+  ]);
+  if(result.error)throw new Error('Products are temporarily unavailable.');
+  const allowed=new Set(permissions.data?.map((v)=>v.capability));
+  const rows=(result.data??[]).map((product)=>({...product,image_url:product.image_path?(product.image_path.startsWith('/')?product.image_path:supabase.storage.from('product-images').getPublicUrl(product.image_path).data.publicUrl):null}));
+  return <section className="px-4 pb-20 pt-8 sm:px-7 lg:px-10"><div className="flex flex-wrap justify-between gap-4"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#087456]">Catalog workspace</p><h1 className="mt-2 text-4xl font-black tracking-[-0.05em]">Products</h1><p className="mt-2 text-sm text-[#61766b]">Canonical records, variants and actual live inventory. Drafts are invisible to shoppers.</p></div><div className="flex items-end gap-2">{allowed.has('products.write')&&<Link href="/admin/products/new" className="rounded-lg bg-[#0d211a] px-4 py-2 text-xs font-bold text-white">New draft</Link>}{allowed.has('products.import')&&<Link href="/admin/imports" className="rounded-lg border border-[#c8d9cb] bg-white px-4 py-2 text-xs font-bold">Bulk import</Link>}</div></div><form method="get" className="mt-6 flex flex-wrap gap-3 rounded-2xl border border-[#dce6dc] bg-white p-4"><input name="q" defaultValue={filters.url.q} aria-label="Search catalog" placeholder="Name, SKU or style code" className="rounded-lg border border-[#dce6dc] p-2 text-sm"/>{[{name:'brand',label:'All brands',value:filters.url.brand,options:brands.data?.map((v)=>({value:v.id,label:v.name}))??[]},{name:'category',label:'All categories',value:filters.url.category,options:categories.data?.map((v)=>({value:v.id,label:v.name}))??[]},{name:'status',label:'All states',value:filters.url.status,options:['active','draft','archived'].map((v)=>({value:v,label:v}))},{name:'featured',label:'Featured (all)',value:filters.url.featured,options:[{value:'true',label:'Featured'},{value:'false',label:'Not featured'}]},{name:'wanted',label:'Most Wanted (all)',value:filters.url.wanted,options:[{value:'true',label:'Most Wanted'},{value:'false',label:'Not Most Wanted'}]}].map((field)=><select key={field.name} name={field.name} defaultValue={field.value} aria-label={field.name} className="rounded-lg border border-[#dce6dc] bg-white p-2 text-sm"><option value="">{field.label}</option>{field.options.map((v)=><option key={v.value} value={v.value}>{v.label}</option>)}</select>)}<select name="sort" defaultValue={filters.url.sort} aria-label="Sort products" className="rounded-lg border border-[#dce6dc] bg-white p-2 text-sm"><option value="updated">Recently updated</option><option value="name">Name</option><option value="price">Lowest live price</option></select><button className="rounded-lg bg-[#0d211a] px-4 py-2 text-xs font-bold text-white">Filter</button></form><div className="mt-5"><AdminProductTable rows={rows} manage={allowed.has('products.write')} canExport={allowed.has('products.export')} exportQuery={new URLSearchParams(filters.url).toString()}/><div className="rounded-b-2xl border border-t-0 border-[#dce6dc] bg-white"><AdminPagination basePath="/admin/products" page={filters.page} count={result.data?.[0]?.total_count??0} pageSize={pageSize} filters={filters.url}/></div></div></section>;
 }
