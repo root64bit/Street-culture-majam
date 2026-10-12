@@ -24,6 +24,7 @@ export async function GET() {
       application: 'STREET CULTURE Archival Vault',
       database: dbStatus,
       environment: process.env.NODE_ENV || 'development',
+      commit: process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ?? 'local',
       timestamp,
     },
     { status: 200 }
