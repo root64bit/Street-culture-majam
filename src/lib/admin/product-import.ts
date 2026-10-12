@@ -147,6 +147,47 @@ function matchTaxonomy(value: string, options: Taxonomy[]) {
   return matches.length === 1 ? matches[0] : null;
 }
 
+export function revalidateImportTaxonomy({
+  rawData,
+  normalizedData,
+  validationErrors,
+  brands,
+  categories,
+}: {
+  rawData: Record<string, string>;
+  normalizedData: Record<string, unknown>;
+  validationErrors: ImportIssue[];
+  brands: Taxonomy[];
+  categories: Taxonomy[];
+}) {
+  const nextErrors = validationErrors.filter(
+    (issue) => issue.field !== 'brand' && issue.field !== 'category'
+  );
+  const brand = matchTaxonomy(rawData.brand ?? '', brands);
+  const category = matchTaxonomy(rawData.category ?? '', categories);
+  if (!brand)
+    nextErrors.push({
+      field: 'brand',
+      value: rawData.brand ?? '',
+      error: 'Unknown or ambiguous brand. Create or map it in admin first.',
+    });
+  if (!category)
+    nextErrors.push({
+      field: 'category',
+      value: rawData.category ?? '',
+      error: 'Unknown or ambiguous category. Create or map it in admin first.',
+    });
+  return {
+    normalizedData: {
+      ...normalizedData,
+      brandId: brand?.id ?? null,
+      categoryId: category?.id ?? null,
+    },
+    validationErrors: nextErrors,
+    status: nextErrors.length ? ('INVALID' as const) : ('VALID' as const),
+  };
+}
+
 function storagePathFromUrl(value: string, supabaseUrl: string): string | null {
   try {
     const url = new URL(value);

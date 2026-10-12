@@ -6,6 +6,7 @@ import {
   canonicalMediaHeaders,
   parseProductImport,
   productHeaders,
+  revalidateImportTaxonomy,
   variantHeaders,
 } from '@/lib/admin/product-import';
 
@@ -247,5 +248,45 @@ describe('product import staging validation', () => {
     const result = await parseProductImport(bufferWithNotes, context);
     expect(result.rows).toHaveLength(1);
     expect(result.rows[0].status).toBe('VALID');
+  });
+});
+
+describe('staged import taxonomy revalidation', () => {
+  it('repairs taxonomy-only validation errors after catalog values are created', () => {
+    const result = revalidateImportTaxonomy({
+      rawData: { brand: 'Dior', category: 'Bags' },
+      normalizedData: { name: 'Lady Dior', brandId: null, categoryId: null },
+      validationErrors: [
+        { field: 'brand', value: 'Dior', error: 'Unknown brand.' },
+        { field: 'category', value: 'Bags', error: 'Unknown category.' },
+      ],
+      brands: context.brands,
+      categories: context.categories,
+    });
+
+    expect(result.status).toBe('VALID');
+    expect(result.validationErrors).toEqual([]);
+    expect(result.normalizedData).toMatchObject({
+      brandId: context.brands[0].id,
+      categoryId: context.categories[0].id,
+    });
+  });
+
+  it('preserves unrelated errors and reports missing taxonomy values once', () => {
+    const result = revalidateImportTaxonomy({
+      rawData: { brand: 'Missing', category: 'Bags' },
+      normalizedData: { name: 'Draft' },
+      validationErrors: [
+        { field: 'brand', value: 'Missing', error: 'Old taxonomy error.' },
+        { field: 'selling_price', value: '', error: 'Price is required.' },
+      ],
+      brands: context.brands,
+      categories: context.categories,
+    });
+
+    expect(result.status).toBe('INVALID');
+    expect(result.validationErrors.filter((issue) => issue.field === 'brand')).toHaveLength(1);
+    expect(result.validationErrors.some((issue) => issue.field === 'selling_price')).toBe(true);
+    expect(result.normalizedData.categoryId).toBe(context.categories[0].id);
   });
 });

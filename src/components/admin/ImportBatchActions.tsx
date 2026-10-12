@@ -13,7 +13,7 @@ export function ImportBatchActions({
   status: string;
 }) {
   const router = useRouter();
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<'import' | 'revalidate' | null>(null);
   const [progress, setProgress] = useState('');
   const [error, setError] = useState('');
 
@@ -24,7 +24,7 @@ export function ImportBatchActions({
       )
     )
       return;
-    setBusy(true);
+    setBusy('import');
     setError('');
     try {
       let remaining = valid;
@@ -47,7 +47,31 @@ export function ImportBatchActions({
       setError(cause instanceof Error ? cause.message : 'Import stopped.');
       router.refresh();
     } finally {
-      setBusy(false);
+      setBusy(null);
+    }
+  }
+
+  async function revalidate() {
+    setBusy('revalidate');
+    setError('');
+    setProgress('');
+    try {
+      const response = await fetch(`/api/admin/imports/${id}/revalidate`, { method: 'POST' });
+      const result = (await response.json()) as {
+        validCount?: number;
+        invalidCount?: number;
+        error?: string;
+      };
+      if (!response.ok) throw new Error(result.error ?? 'Revalidation failed.');
+      setProgress(
+        `Revalidated: ${result.validCount ?? 0} valid, ${result.invalidCount ?? 0} invalid.`
+      );
+      router.refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Revalidation failed.');
+      router.refresh();
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -56,11 +80,21 @@ export function ImportBatchActions({
       {['READY', 'IMPORTING'].includes(status) && valid > 0 && (
         <button
           type="button"
-          disabled={busy}
+          disabled={busy !== null}
           onClick={() => void confirm()}
           className="rounded-full bg-[#065f46] px-6 py-3 text-xs font-bold uppercase tracking-wider text-white disabled:opacity-50"
         >
-          {busy ? 'Importing…' : 'Confirm create-only import'}
+          {busy === 'import' ? 'Importing…' : 'Confirm create-only import'}
+        </button>
+      )}
+      {['FAILED', 'READY'].includes(status) && (
+        <button
+          type="button"
+          disabled={busy !== null}
+          onClick={() => void revalidate()}
+          className="rounded-full border border-[#065f46] px-6 py-3 text-xs font-bold uppercase tracking-wider text-[#065f46] hover:bg-[#065f46] hover:text-white disabled:opacity-50"
+        >
+          {busy === 'revalidate' ? 'Revalidating…' : 'Revalidate against catalog'}
         </button>
       )}
       <a
