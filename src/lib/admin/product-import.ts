@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import JSZip from 'jszip';
 import { createHash } from 'node:crypto';
 import { slugify } from '@/lib/schemas/admin-catalog.schema';
 
@@ -158,12 +159,62 @@ function storagePathFromUrl(value: string, supabaseUrl: string): string | null {
   }
 }
 
+export async function sanitizeWorkbookBuffer(buffer: Buffer): Promise<Buffer> {
+  try {
+    const zip = await JSZip.loadAsync(buffer);
+    let modified = false;
+
+    const relsFiles = Object.keys(zip.files).filter(
+      (name) => name.startsWith('xl/worksheets/_rels/') && name.endsWith('.rels')
+    );
+    for (const relsPath of relsFiles) {
+      const file = zip.file(relsPath);
+      if (!file) continue;
+      const xml = await file.async('text');
+      const cleaned = xml.replace(
+        /<Relationship\b[^>]*?(?:comments|vmlDrawing)[^>]*?\/>/gi,
+        ''
+      );
+      if (cleaned !== xml) {
+        zip.file(relsPath, cleaned);
+        modified = true;
+      }
+    }
+
+    for (const name of Object.keys(zip.files)) {
+      if (
+        name.startsWith('xl/comments/') ||
+        /^xl\/comments\d+\.xml$/i.test(name) ||
+        name.startsWith('xl/drawings/commentsDrawing')
+      ) {
+        zip.remove(name);
+        modified = true;
+      }
+    }
+
+    if (modified) {
+      const sanitized = await zip.generateAsync({ type: 'nodebuffer' });
+      return Buffer.from(sanitized);
+    }
+  } catch {
+    // If ZIP manipulation fails, fall back to the original buffer.
+  }
+  return buffer;
+}
+
 export async function parseProductImport(buffer: Buffer, context: ImportContext) {
   if (buffer.length > 5 * 1024 * 1024 || buffer.subarray(0, 2).toString() !== 'PK')
     throw new Error('Upload a valid .xlsx file under 5 MB.');
+  const sanitizedBuffer = await sanitizeWorkbookBuffer(buffer);
   const workbook = new ExcelJS.Workbook();
-  // ExcelJS's bundled Buffer type predates the resizable-ArrayBuffer Node types.
-  await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
+  try {
+    // ExcelJS's bundled Buffer type predates the resizable-ArrayBuffer Node types.
+    await workbook.xlsx.load(sanitizedBuffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
+  } catch {
+    throw new Error(
+      'Could not parse Excel workbook. Ensure the file is not corrupted or password-protected.'
+    );
+  }
   const products = sheetRows(workbook.getWorksheet('PRODUCTS'), productHeaders);
   const variants = sheetRows(workbook.getWorksheet('VARIANTS'), variantHeaders);
   const mediaSheet = workbook.getWorksheet('MEDIA');

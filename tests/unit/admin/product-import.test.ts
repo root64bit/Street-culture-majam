@@ -170,4 +170,18 @@ describe('product import staging validation', () => {
       parseProductImport(Buffer.from(await workbook.xlsx.writeBuffer()), context)
     ).rejects.toThrow('formula');
   });
+
+  it('safely parses workbooks containing cell comments or notes without throwing comments errors', async () => {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(
+      (await workbookBuffer()) as unknown as Parameters<typeof workbook.xlsx.load>[0]
+    );
+    const cell = workbook.getWorksheet('PRODUCTS')!.getCell('M2');
+    cell.note = 'International benchmark comment';
+    const bufferWithNotes = Buffer.from(await workbook.xlsx.writeBuffer());
+    const result = await parseProductImport(bufferWithNotes, context);
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0].status).toBe('VALID');
+  });
 });
+
