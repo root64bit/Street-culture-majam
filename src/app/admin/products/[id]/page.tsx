@@ -35,8 +35,13 @@ export default async function EditAdminProductPage({
     supabase.from('categories').select('id,name').eq('active', true).order('sort_order'),
     supabase.rpc('admin_product_publication_diagnostics', { target_product_id: id }).maybeSingle(),
   ]);
-  if (product.error || brands.error || categories.error || diagnostics.error)
+  if (product.error || brands.error || categories.error) {
+    console.error('Product query failed:', product.error || brands.error || categories.error);
     throw new Error('Product unavailable.');
+  }
+  if (diagnostics.error) {
+    console.warn('Diagnostics query warning:', diagnostics.error);
+  }
   if (!product.data) notFound();
   const record = product.data;
   const visibility = diagnostics.data;

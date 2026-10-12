@@ -1088,7 +1088,7 @@ isOneToOne: false
                            },
 "admin_product_publication_diagnostics":
 { Args: { "target_product_id": string }; Returns: {
-              "active_variant_count": number,"blocker_codes": (string)[],"blocker_messages": (string)[],"draft_listing_count": number,"live_listing_count": number,"media_count": number,"product_id": string,"publicly_visible": boolean,"stage": string
+              "active_variant_count": number,"blocker_codes": (string)[],"blocker_messages": (string)[],"draft_listing_count": number,"live_listing_count": number,"media_count": number,"publicly_visible": boolean,"stage": string
             }[]
                            },
 "admin_product_variants":
