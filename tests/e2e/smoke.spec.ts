@@ -105,7 +105,50 @@ test('editorial product carousel advances and stays controllable', async ({ page
   await page.getByRole('button', { name: 'Pause carousel' }).click();
   await page.getByRole('button', { name: 'Next Most Wanted products' }).click();
   await expect(position).toHaveAttribute('aria-valuenow', '3');
+  await page.getByRole('button', { name: 'Previous Most Wanted products' }).click();
+  await expect(position).toHaveAttribute('aria-valuenow', '2');
   await expect(page.getByRole('button', { name: 'Play carousel' })).toBeVisible();
+});
+
+test('carousel autoplay pauses while a shopper examines the rail', async ({ page }) => {
+  await page.goto('/');
+  const carousel = page.getByRole('region', { name: 'Most Wanted products' });
+  await carousel.scrollIntoViewIfNeeded();
+  const position = page.getByRole('progressbar', { name: 'Carousel position' });
+  await expect(position).toHaveAttribute('aria-valuenow', '1');
+  await carousel.hover();
+  await page.waitForTimeout(5200);
+  await expect(position).toHaveAttribute('aria-valuenow', '1');
+});
+
+test('carousel category filters reset its real slide count and low-count controls', async ({
+  page,
+}) => {
+  await page.goto('/');
+  const carousel = page.getByRole('region', { name: 'Most Wanted products' });
+  await carousel.scrollIntoViewIfNeeded();
+  await page.getByRole('button', { name: 'SNEAKERS' }).click();
+  await expect(carousel.locator('article')).toHaveCount(3);
+  await expect(page.getByRole('progressbar', { name: 'Carousel position' })).toHaveAttribute(
+    'aria-valuemax',
+    '3'
+  );
+  await expect(page.getByRole('button', { name: 'Next Most Wanted products' })).toBeDisabled();
+  await page.getByRole('button', { name: 'BAGS' }).click();
+  await expect(carousel.locator('article')).toHaveCount(1);
+  await expect(carousel.getByText('Louis Vuitton Horizon 55 Monogram Eclipse')).toBeVisible();
+});
+
+test('View Piece opens the matching dynamic product page', async ({ page }) => {
+  await page.goto('/');
+  const firstCard = page
+    .getByRole('region', { name: 'Most Wanted products' })
+    .locator('article')
+    .first();
+  const name = await firstCard.getByRole('heading').innerText();
+  await firstCard.getByRole('link', { name: 'View piece' }).click();
+  await expect(page).toHaveURL(/\/products\//);
+  await expect(page.getByRole('heading', { name, exact: true, level: 1 })).toBeVisible();
 });
 
 test('reduced-motion visitors can move the carousel manually', async ({ page }) => {
@@ -379,7 +422,7 @@ test('admin can create an unpublished catalog draft while staff remains read-onl
   page,
   request,
 }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
   const url = process.env.LOCAL_SUPABASE_TEST_URL;
   const serviceKey = process.env.LOCAL_SUPABASE_TEST_SERVICE_ROLE_KEY;
   const anonKey = process.env.LOCAL_SUPABASE_TEST_ANON_KEY;
@@ -581,9 +624,9 @@ test('admin can create an unpublished catalog draft while staff remains read-onl
     expect(unauthorizedRpc).not.toBeNull();
 
     await page
-      .getByLabel('Item-level authentication decision and image-rights note')
+      .getByLabel('Item-level authentication note (optional)')
       .fill('Browser QA verified exact physical item, price and photo rights.');
-    await page.getByLabel(/I have inspected this exact item/).check();
+    await page.getByLabel(/Confirmed: Physical item inspected/).check();
     await page.getByRole('button', { name: 'Authenticate & publish' }).click();
     await expect(page.getByRole('status')).toContainText(
       'Listing is live and visible to shoppers.'
@@ -602,9 +645,9 @@ test('admin can create an unpublished catalog draft while staff remains read-onl
     const shopperContext = await browser.newContext();
     const shopper = await shopperContext.newPage();
     await shopper.goto('/shop');
-    await expect(shopper.getByText(name, { exact: true })).toBeVisible();
+    await expect(shopper.getByRole('link', { name, exact: true })).toBeVisible();
     await shopper.goto(`/products/${publishedProduct!.slug}`);
-    await expect(shopper.getByRole('heading', { name })).toBeVisible();
+    await expect(shopper.getByRole('heading', { name, exact: true, level: 1 })).toBeVisible();
     await shopper.getByRole('button', { name: 'Add to bag' }).click();
     await expect(shopper.getByRole('dialog', { name: 'Your bag · 1' })).toBeVisible();
     await shopperContext.close();

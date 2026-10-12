@@ -48,6 +48,13 @@ export function Storefront({
   const { openQuickBuy } = useCommerce();
   const mostWantedRef = useRef<HTMLDivElement>(null);
   const interactionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    scrollLeft: number;
+    moved: boolean;
+  } | null>(null);
+  const suppressClickRef = useRef(false);
   const [activeSlide, setActiveSlide] = useState(0);
   const [playing, setPlaying] = useState(true);
   const [hovered, setHovered] = useState(false);
@@ -55,6 +62,8 @@ export function Storefront({
   const [interacting, setInteracting] = useState(false);
   const [inView, setInView] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
+  const [documentVisible, setDocumentVisible] = useState(true);
+  const [cardsPerView, setCardsPerView] = useState(1);
 
   const visibleProducts = useMemo(
     () =>
@@ -62,6 +71,11 @@ export function Storefront({
     [category, products]
   );
   const newProducts = newArrivals;
+  const canNavigate = visibleProducts.length > cardsPerView;
+  const canLoop = visibleProducts.length >= cardsPerView + 2;
+  const canGoPrevious = canNavigate && (canLoop || activeSlide > 0);
+  const canGoNext =
+    canNavigate && (canLoop || activeSlide < Math.max(0, visibleProducts.length - 1));
   const categoryCards = categories.map((item, index) => ({
     category: item.slug,
     label: item.name.toUpperCase(),
@@ -76,7 +90,9 @@ export function Storefront({
     (index: number, behavior: ScrollBehavior = 'smooth') => {
       const rail = mostWantedRef.current;
       if (!rail || !visibleProducts.length) return;
-      const next = (index + visibleProducts.length) % visibleProducts.length;
+      const next = canLoop
+        ? (index + visibleProducts.length) % visibleProducts.length
+        : Math.max(0, Math.min(index, visibleProducts.length - 1));
       const card = rail.querySelectorAll<HTMLElement>('article').item(next);
       if (!card) return;
       const left =
@@ -87,7 +103,7 @@ export function Storefront({
       });
       setActiveSlide(next);
     },
-    [reducedMotion, visibleProducts.length]
+    [canLoop, reducedMotion, visibleProducts.length]
   );
 
   useEffect(() => {
@@ -103,6 +119,22 @@ export function Storefront({
     sync();
     query.addEventListener('change', sync);
     return () => query.removeEventListener('change', sync);
+  }, []);
+
+  useEffect(() => {
+    const syncLayout = () => {
+      setCardsPerView(window.innerWidth >= 1180 ? 3 : window.innerWidth >= 640 ? 2 : 1);
+    };
+    syncLayout();
+    window.addEventListener('resize', syncLayout);
+    return () => window.removeEventListener('resize', syncLayout);
+  }, []);
+
+  useEffect(() => {
+    const syncVisibility = () => setDocumentVisible(document.visibilityState === 'visible');
+    syncVisibility();
+    document.addEventListener('visibilitychange', syncVisibility);
+    return () => document.removeEventListener('visibilitychange', syncVisibility);
   }, []);
 
   useEffect(() => {
@@ -122,14 +154,17 @@ export function Storefront({
       focused ||
       interacting ||
       !inView ||
+      !documentVisible ||
       reducedMotion ||
-      visibleProducts.length < 2
+      !canLoop
     )
       return;
     const timer = window.setInterval(() => goToSlide(activeSlide + 1), 4800);
     return () => window.clearInterval(timer);
   }, [
     activeSlide,
+    canLoop,
+    documentVisible,
     focused,
     goToSlide,
     hovered,
@@ -151,6 +186,44 @@ export function Storefront({
     setInteracting(true);
     if (interactionTimerRef.current) clearTimeout(interactionTimerRef.current);
     interactionTimerRef.current = setTimeout(() => setInteracting(false), 8000);
+  }
+
+  function beginMouseDrag(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.pointerType !== 'mouse' || event.button !== 0) return;
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      scrollLeft: event.currentTarget.scrollLeft,
+      moved: false,
+    };
+  }
+
+  function continueMouseDrag(event: React.PointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const distance = event.clientX - drag.startX;
+    if (Math.abs(distance) > 5 && !drag.moved) {
+      drag.moved = true;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setInteracting(true);
+    }
+    if (!drag.moved) return;
+    event.preventDefault();
+    event.currentTarget.scrollLeft = drag.scrollLeft - distance;
+  }
+
+  function finishMouseDrag(event: React.PointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    suppressClickRef.current = drag.moved;
+    dragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    pauseAfterTouch();
+    window.setTimeout(() => {
+      suppressClickRef.current = false;
+    }, 0);
   }
 
   function updateSlideFromScroll() {
@@ -254,16 +327,38 @@ export function Storefront({
                 THE NEXT <span className="text-acid">OBSESSION.</span>
               </h2>
             </div>
-            <div className="max-w-xs lg:pb-1">
+            <div className="max-w-sm lg:pb-1">
               <p className="text-sm leading-6 text-white/60">
-                One-of-one finds, always in motion. Swipe through every live piece in the edit.
+                Rare finds. Verified pieces. Your next obsession starts here.
               </p>
-              <Link
-                href="/shop"
-                className="mt-5 inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-acid transition hover:gap-4"
-              >
-                Explore the full drop <ArrowUpRight className="h-4 w-4" />
-              </Link>
+              <div className="mt-5 flex items-center justify-between gap-5">
+                <Link
+                  href="/shop"
+                  className="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-acid transition hover:gap-4"
+                >
+                  Explore the full drop <ArrowUpRight className="h-4 w-4" />
+                </Link>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => goToSlide(activeSlide - 1)}
+                    disabled={!canGoPrevious}
+                    className="grid h-12 w-12 place-items-center rounded-full border border-white/25 bg-white/10 text-white shadow-[0_12px_35px_rgba(0,0,0,0.28)] backdrop-blur-xl transition hover:border-acid hover:bg-acid hover:text-black disabled:cursor-not-allowed disabled:opacity-30"
+                    aria-label="Previous Most Wanted products"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => goToSlide(activeSlide + 1)}
+                    disabled={!canGoNext}
+                    className="grid h-12 w-12 place-items-center rounded-full border border-acid/70 bg-acid text-black shadow-[0_12px_35px_rgba(0,0,0,0.28)] backdrop-blur-xl transition hover:border-white hover:bg-white disabled:cursor-not-allowed disabled:border-white/20 disabled:bg-white/10 disabled:text-white disabled:opacity-30"
+                    aria-label="Next Most Wanted products"
+                  >
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -290,26 +385,6 @@ export function Storefront({
                 {item.label}
               </button>
             ))}
-            <div className="ml-auto flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => goToSlide(activeSlide - 1)}
-                disabled={visibleProducts.length < 2}
-                className="grid h-11 w-11 place-items-center rounded-full border border-white/25 text-white transition hover:border-acid hover:bg-acid hover:text-black disabled:opacity-40"
-                aria-label="Previous Most Wanted products"
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => goToSlide(activeSlide + 1)}
-                disabled={visibleProducts.length < 2}
-                className="grid h-11 w-11 place-items-center rounded-full bg-acid text-black transition hover:bg-white disabled:opacity-40"
-                aria-label="Next Most Wanted products"
-              >
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            </div>
           </div>
 
           {visibleProducts.length ? (
@@ -326,7 +401,34 @@ export function Storefront({
                 }}
                 onTouchStart={pauseAfterTouch}
                 onTouchEnd={pauseAfterTouch}
-                className="-mx-4 mt-7 flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain px-4 pb-4 [scrollbar-width:none] sm:-mx-6 sm:gap-5 sm:px-6 lg:-mx-10 lg:gap-6 lg:px-10 [&::-webkit-scrollbar]:hidden"
+                onPointerDown={beginMouseDrag}
+                onPointerMove={continueMouseDrag}
+                onPointerUp={finishMouseDrag}
+                onPointerCancel={finishMouseDrag}
+                onClickCapture={(event) => {
+                  if (!suppressClickRef.current) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'ArrowLeft') {
+                    event.preventDefault();
+                    goToSlide(activeSlide - 1);
+                  }
+                  if (event.key === 'ArrowRight') {
+                    event.preventDefault();
+                    goToSlide(activeSlide + 1);
+                  }
+                  if (event.key === 'Home') {
+                    event.preventDefault();
+                    goToSlide(0);
+                  }
+                  if (event.key === 'End') {
+                    event.preventDefault();
+                    goToSlide(visibleProducts.length - 1);
+                  }
+                }}
+                className="-mx-4 mt-7 flex cursor-grab snap-x snap-mandatory gap-5 overflow-x-auto overscroll-x-contain px-4 pb-5 [scrollbar-width:none] active:cursor-grabbing sm:-mx-6 sm:gap-5 sm:px-6 lg:-mx-10 lg:gap-6 lg:px-10 [&::-webkit-scrollbar]:hidden"
                 role="region"
                 aria-roledescription="carousel"
                 aria-label="Most Wanted products"
@@ -345,7 +447,7 @@ export function Storefront({
                 ))}
                 <div
                   aria-hidden="true"
-                  className="w-[calc(100%-min(82vw,430px))] shrink-0 sm:w-[calc(100%-min(47vw,430px))] lg:w-[calc(100%-min(31vw,430px))]"
+                  className="w-[calc(100%-min(84vw,420px))] shrink-0 sm:w-[calc(100%-min(46vw,420px))] lg:w-[calc(100%-min(29vw,420px))]"
                 />
               </div>
               <div className="mt-7 flex items-center gap-5 border-t border-white/15 pt-5">
@@ -742,63 +844,73 @@ function ShowcaseTile({
   onQuickBuy: () => void;
 }) {
   return (
-    <article className="group relative w-[82vw] max-w-[430px] shrink-0 snap-start sm:w-[47vw] lg:w-[31vw]">
-      <div className="relative aspect-[0.78] overflow-hidden rounded-[1.7rem] bg-[#25332e] ring-1 ring-white/15 sm:rounded-[2rem]">
-        <Image
-          src={product.image}
-          alt={product.name}
-          fill
-          sizes="(max-width: 640px) 82vw, (max-width: 1024px) 47vw, 31vw"
-          className="object-cover transition-transform duration-700 group-hover:scale-[1.06] motion-reduce:transition-none"
-          style={{ objectPosition: product.imagePosition }}
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/15 to-black/15" />
-        <div className="absolute inset-x-4 top-4 flex items-start justify-between gap-3 sm:inset-x-5 sm:top-5">
-          <span className="rounded-full border border-white/40 bg-black/35 px-3 py-2 font-mono text-[9px] tracking-[0.14em] text-white backdrop-blur-xl">
-            SC / {String(index + 1).padStart(2, '0')} — {String(total).padStart(2, '0')}
-          </span>
-          <button
-            type="button"
-            onClick={onFavorite}
-            aria-label={
-              favorite ? `Remove ${product.name} from wishlist` : `Add ${product.name} to wishlist`
-            }
-            aria-pressed={favorite}
-            className="grid h-10 w-10 place-items-center rounded-full border border-white/40 bg-black/35 text-white backdrop-blur-xl transition hover:border-acid hover:bg-acid hover:text-black"
-          >
-            <Heart className={cn('h-4 w-4', favorite && 'fill-current')} />
-          </button>
-        </div>
-        <div className="absolute inset-x-5 bottom-5 sm:inset-x-7 sm:bottom-7">
-          <div className="mb-3 flex items-center gap-2 text-[9px] font-bold uppercase tracking-[0.18em] text-acid">
-            <span className="h-1.5 w-1.5 rounded-full bg-acid" /> VERIFIED PIECE{' '}
-            <span className="text-white/50">/ {product.categoryName ?? product.category}</span>
+    <article className="group relative w-[84vw] max-w-[420px] shrink-0 snap-start transition-transform duration-500 ease-out hover:-translate-y-1 motion-reduce:transition-none sm:w-[46vw] lg:w-[29vw]">
+      <div className="overflow-hidden rounded-[1.5rem] border border-white/15 bg-[#f4f1e9] shadow-[0_26px_80px_rgba(0,0,0,0.22)] transition-colors duration-500 group-hover:border-white/35 sm:rounded-[1.75rem]">
+        <div className="relative aspect-square overflow-hidden bg-[#ebe7dd]">
+          <Image
+            src={product.image}
+            alt={product.name}
+            fill
+            draggable={false}
+            loading={index < 3 ? 'eager' : 'lazy'}
+            sizes="(max-width: 640px) 84vw, (max-width: 1179px) 46vw, min(29vw, 420px)"
+            className="select-none object-contain p-5 transition-transform duration-700 ease-out group-hover:scale-[1.025] motion-reduce:transition-none sm:p-7"
+            style={{ objectPosition: product.imagePosition }}
+          />
+          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.18),transparent_30%,rgba(7,20,16,0.08))]" />
+          <div className="absolute inset-x-4 top-4 flex items-start justify-between gap-3 sm:inset-x-5 sm:top-5">
+            <span className="rounded-full border border-white/55 bg-white/45 px-3 py-2 font-mono text-[9px] font-bold tracking-[0.14em] text-black/75 shadow-sm backdrop-blur-xl">
+              SC / {String(index + 1).padStart(2, '0')} — {String(total).padStart(2, '0')}
+            </span>
+            <button
+              type="button"
+              onClick={onFavorite}
+              aria-label={
+                favorite
+                  ? `Remove ${product.name} from wishlist`
+                  : `Add ${product.name} to wishlist`
+              }
+              aria-pressed={favorite}
+              className="grid h-11 w-11 place-items-center rounded-full border border-white/60 bg-white/45 text-black/75 shadow-sm backdrop-blur-xl transition hover:border-acid hover:bg-acid hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acid"
+            >
+              <Heart className={cn('h-4 w-4', favorite && 'fill-current')} />
+            </button>
           </div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/60">
+          <span className="absolute bottom-4 left-4 inline-flex items-center gap-2 rounded-full border border-white/60 bg-white/50 px-3 py-2 text-[9px] font-black uppercase tracking-[0.15em] text-black/75 shadow-sm backdrop-blur-xl sm:bottom-5 sm:left-5">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#069669]" /> Verified piece
+          </span>
+        </div>
+        <div className="flex min-h-[218px] flex-col border-t border-black/10 bg-[#faf8f2] p-5 text-black sm:p-6">
+          <p className="text-[9px] font-black uppercase tracking-[0.2em] text-[#006b50]">
             {product.brand}
           </p>
-          <h3 className="mt-1 line-clamp-2 min-h-[2.1em] text-[clamp(1.7rem,3.3vw,2.9rem)] font-black leading-[0.97] tracking-[-0.055em] text-white">
+          <h3 className="mt-2 line-clamp-2 min-h-12 text-xl font-black leading-6 tracking-[-0.035em] sm:text-[1.35rem]">
             {product.name}
           </h3>
-          <div className="mt-4 flex items-end justify-between gap-3 border-t border-white/30 pt-3">
-            <p className="text-lg font-black tracking-tight text-white">
+          <p className="mt-2 truncate text-xs text-black/50">
+            {product.condition.replaceAll('_', ' ')} ·{' '}
+            {product.sizes.length ? product.sizes.slice(0, 3).join(' · ') : 'One Size'}
+            {product.sizes.length > 3 ? ' +' : ''}
+          </p>
+          <div className="mt-4 flex items-end justify-between gap-3">
+            <p className="text-xl font-black tracking-[-0.03em]">
               <DisplayPrice amount={product.price} />
             </p>
-            <p className="max-w-[40%] truncate text-right text-[10px] text-white/55">
-              {product.sizes.join(' · ')}
+            <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-black/35">
+              {product.categoryName ?? product.category}
             </p>
           </div>
-          <div className="mt-4 flex gap-2">
+          <div className="mt-auto flex gap-2 pt-5">
             <Link
               href={`/products/${product.slug}`}
-              className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-acid px-3 text-[9px] font-black uppercase tracking-[0.12em] text-black transition hover:bg-white"
+              className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-full border border-black/15 bg-transparent px-3 text-[9px] font-black uppercase tracking-[0.12em] text-black transition hover:border-black hover:bg-black hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
             >
               View piece <ArrowUpRight className="h-3.5 w-3.5" />
             </Link>
             <button
               type="button"
               onClick={onQuickBuy}
-              className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-full border border-white/50 bg-white/10 px-3 text-[9px] font-black uppercase tracking-[0.12em] text-white backdrop-blur transition hover:bg-white hover:text-black"
+              className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-full border border-acid bg-acid px-3 text-[9px] font-black uppercase tracking-[0.12em] text-black shadow-[0_8px_24px_rgba(198,255,0,0.16)] transition hover:bg-[#d6ff4c] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
             >
               <ShoppingBag className="h-3.5 w-3.5" /> Quick buy
             </button>
