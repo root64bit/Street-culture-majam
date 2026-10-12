@@ -9,7 +9,8 @@ import { useDisplayCurrency } from '@/features/currency/CurrencyProvider';
 import { SUPPORTED_CURRENCIES, type SupportedCurrency } from '@/lib/currency';
 
 const navigation = [
-  { label: 'NEW', href: '/#new' },
+  { label: 'SHOP', href: '/shop' },
+  { label: 'NEW', href: '/new' },
   { label: 'SNEAKERS', href: '/#sneakers' },
   { label: 'STREETWEAR', href: '/#streetwear' },
   { label: 'LUXURY', href: '/#luxury' },

@@ -1,5 +1,12 @@
 export type ProductCategory = string;
 
+export interface StoreListingOption {
+  listingId: string;
+  size: string;
+  price: number;
+  condition: string;
+}
+
 export interface StoreProduct {
   id: string;
   listingId?: string;
@@ -15,6 +22,7 @@ export interface StoreProduct {
   sizes: string[];
   ownershipType?: string;
   authenticationStatus?: string;
+  listingOptions?: StoreListingOption[];
   image: string;
   imagePosition: string;
   isNew?: boolean;

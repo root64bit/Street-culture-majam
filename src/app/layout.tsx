@@ -5,6 +5,9 @@ import { CurrencyProvider } from '@/features/currency/CurrencyProvider';
 import { SiteChrome } from '@/components/layout/SiteChrome';
 
 export const metadata: Metadata = {
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL || 'https://street-culture-majam.vercel.app'
+  ),
   title: 'STREET CULTURE — Authenticity is the culture',
   description:
     'Curated sneakers, streetwear and luxury. Every item is verified before it reaches you.',
@@ -22,9 +25,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="min-h-screen bg-[#fbfaf6] text-black antialiased selection:bg-acid selection:text-black">
-        <CurrencyProvider><CommerceProvider>
-          <SiteChrome>{children}</SiteChrome>
-        </CommerceProvider></CurrencyProvider>
+        <CurrencyProvider>
+          <CommerceProvider>
+            <SiteChrome>{children}</SiteChrome>
+          </CommerceProvider>
+        </CurrencyProvider>
       </body>
     </html>
   );

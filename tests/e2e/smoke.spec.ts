@@ -57,9 +57,14 @@ test('homepage uses the supplied brand mark and lists real live inventory', asyn
   await page.goto('/');
   await expect(page.getByRole('img', { name: 'Street Culture — Authentic Only' })).toBeVisible();
   await expect(page.getByRole('heading', { name: /AUTHENTICITY/ })).toBeVisible();
-  await expect(
-    page.getByRole('region', { name: 'Most Wanted products' }).locator('article')
-  ).toHaveCount(7);
+  const productCards = page
+    .getByRole('region', { name: 'Most Wanted products' })
+    .locator('article');
+  await expect(productCards).toHaveCount(5);
+  const productLinks = await productCards
+    .locator('a[href^="/products/"]')
+    .evaluateAll((links) => links.map((link) => link.getAttribute('href')));
+  expect(new Set(productLinks).size).toBe(productLinks.length);
 });
 
 test('a guest wishlist persists locally across a reload', async ({ page }) => {
@@ -370,9 +375,11 @@ test('signed-in customer sees only their own order and consignment status', asyn
 });
 
 test('admin can create an unpublished catalog draft while staff remains read-only', async ({
+  browser,
   page,
   request,
 }) => {
+  test.setTimeout(60_000);
   const url = process.env.LOCAL_SUPABASE_TEST_URL;
   const serviceKey = process.env.LOCAL_SUPABASE_TEST_SERVICE_ROLE_KEY;
   const anonKey = process.env.LOCAL_SUPABASE_TEST_ANON_KEY;
@@ -578,13 +585,29 @@ test('admin can create an unpublished catalog draft while staff remains read-onl
       .fill('Browser QA verified exact physical item, price and photo rights.');
     await page.getByLabel(/I have inspected this exact item/).check();
     await page.getByRole('button', { name: 'Authenticate & publish' }).click();
-    await expect(page.getByRole('status')).toContainText('Listing is live and visible to shoppers.');
+    await expect(page.getByRole('status')).toContainText(
+      'Listing is live and visible to shoppers.'
+    );
     const { data: publishedProduct } = await admin
       .from('products')
-      .select('active')
+      .select('active,slug')
       .eq('id', productId)
       .single();
     expect(publishedProduct?.active).toBe(true);
+    const { data: anonymousCatalog } = await anon
+      .from('public_catalog_products')
+      .select('product_id,listing_options')
+      .eq('product_id', productId);
+    expect(anonymousCatalog).toHaveLength(1);
+    const shopperContext = await browser.newContext();
+    const shopper = await shopperContext.newPage();
+    await shopper.goto('/shop');
+    await expect(shopper.getByText(name, { exact: true })).toBeVisible();
+    await shopper.goto(`/products/${publishedProduct!.slug}`);
+    await expect(shopper.getByRole('heading', { name })).toBeVisible();
+    await shopper.getByRole('button', { name: 'Add to bag' }).click();
+    await expect(shopper.getByRole('dialog', { name: 'Your bag · 1' })).toBeVisible();
+    await shopperContext.close();
 
     page.once('dialog', (dialog) => dialog.accept());
     await page.getByRole('button', { name: 'Unpublish' }).click();
@@ -597,9 +620,7 @@ test('admin can create an unpublished catalog draft while staff remains read-onl
     expect(unpublishedProduct?.active).toBe(false);
 
     await page.goto(`/admin/products/${productId}?tab=general`);
-    await page
-      .getByLabel('Description')
-      .fill('Updated draft description verified in browser QA.');
+    await page.getByLabel('Description').fill('Updated draft description verified in browser QA.');
     await page.getByRole('button', { name: 'Save draft' }).click();
     await expect(page.getByRole('status')).toContainText(
       'Draft saved. It is still hidden from shoppers.'

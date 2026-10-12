@@ -219,7 +219,13 @@ export function AdminProductTable({
                   </p>
                 </td>
                 <td className="px-4 py-4 text-xs">
-                  {product.archived_at ? 'Archived' : product.active ? 'Active record' : 'Draft'}
+                  {product.archived_at ? (
+                    'Archived'
+                  ) : product.active && product.live_count > 0 ? (
+                    <span className="font-bold text-[#087456]">PUBLICLY VISIBLE</span>
+                  ) : (
+                    <span className="font-bold text-[#9a6710]">NOT PUBLIC — ACTION REQUIRED</span>
+                  )}
                 </td>
                 <td className="px-4 py-4 text-[11px]">
                   {product.featured && <p>Featured</p>}

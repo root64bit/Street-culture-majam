@@ -53,7 +53,7 @@ function DialogShell({
       if (event.key === 'Escape') onCloseRef.current();
       if (event.key !== 'Tab' || !panelRef.current) return;
       const focusable = panelRef.current.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])',
+        'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])'
       );
       if (focusable.length === 0) return;
       const first = focusable[0];
@@ -93,7 +93,7 @@ function DialogShell({
         tabIndex={-1}
         className={cn(
           'absolute bottom-0 left-0 right-0 max-h-[92dvh] overflow-y-auto rounded-t-[2rem] bg-[#fbfaf6] text-black shadow-2xl outline-none md:bottom-0 md:left-auto md:top-0 md:rounded-none md:rounded-l-[2rem]',
-          wide ? 'md:w-[min(92vw,720px)]' : 'md:w-[min(92vw,520px)]',
+          wide ? 'md:w-[min(92vw,720px)]' : 'md:w-[min(92vw,520px)]'
         )}
       >
         <div className="sticky top-0 z-20 flex items-center justify-between border-b border-black/10 bg-[#fbfaf6]/90 px-5 py-4 backdrop-blur-xl md:px-7">
@@ -115,15 +115,40 @@ function DialogShell({
 
 function QuickBuyContent({ product }: { product: StoreProduct }) {
   const { addToCart, closeQuickBuy } = useCommerce();
-  const [size, setSize] = useState('');
+  const options = product.listingOptions?.length
+    ? product.listingOptions
+    : product.listingId
+      ? product.sizes.map((size) => ({
+          listingId: product.listingId!,
+          size,
+          price: product.price,
+          condition: product.condition,
+        }))
+      : [];
+  const [selectedListingId, setSelectedListingId] = useState(
+    options.length === 1 ? options[0].listingId : ''
+  );
   const [showError, setShowError] = useState(false);
+  const selected = options.find((option) => option.listingId === selectedListingId);
 
   const add = (buyNow: boolean) => {
-    if (!size) {
+    if (!selected) {
       setShowError(true);
       return;
     }
-    addToCart(product, size, buyNow);
+    addToCart(
+      {
+        ...product,
+        id: selected.listingId,
+        listingId: selected.listingId,
+        price: selected.price,
+        condition: selected.condition,
+        sizes: [selected.size],
+        listingOptions: [selected],
+      },
+      selected.size,
+      buyNow
+    );
   };
 
   return (
@@ -146,35 +171,37 @@ function QuickBuyContent({ product }: { product: StoreProduct }) {
           {product.brand}
         </p>
         <h2 className="text-3xl font-black leading-[0.98] tracking-[-0.04em]">{product.name}</h2>
-        <p className="mt-4 text-2xl font-bold">{formatPrice(product.price, 'MZN')}</p>
+        <p className="mt-4 text-2xl font-bold">
+          {formatPrice(selected?.price ?? product.price, 'MZN')}
+        </p>
 
         <div className="mt-8 flex items-center justify-between">
           <label className="text-xs font-bold uppercase tracking-[0.12em]">Select size</label>
-          <span className="text-xs text-black/45">{product.condition}</span>
+          <span className="text-xs text-black/45">{selected?.condition ?? product.condition}</span>
         </div>
         <div className="mt-3 grid grid-cols-3 gap-2">
-          {product.sizes.map((option) => (
+          {options.map((option) => (
             <button
-              key={option}
+              key={option.listingId}
               type="button"
               onClick={() => {
-                setSize(option);
+                setSelectedListingId(option.listingId);
                 setShowError(false);
               }}
-              aria-pressed={size === option}
+              aria-pressed={selectedListingId === option.listingId}
               className={cn(
                 'min-h-11 rounded-xl border text-sm font-semibold transition',
-                size === option
+                selectedListingId === option.listingId
                   ? 'border-black bg-black text-white'
-                  : 'border-black/15 bg-white hover:border-black',
+                  : 'border-black/15 bg-white hover:border-black'
               )}
             >
-              {option}
+              {option.size}
             </button>
           ))}
         </div>
         {showError && (
-          <p className="mt-3 text-sm font-medium text-red-650" role="alert">
+          <p className="text-red-650 mt-3 text-sm font-medium" role="alert">
             Choose a size before continuing.
           </p>
         )}
@@ -204,13 +231,22 @@ function QuickBuyContent({ product }: { product: StoreProduct }) {
             Buy now
           </button>
         </div>
-        <button
-          type="button"
-          onClick={closeQuickBuy}
-          className="mt-5 text-xs font-semibold uppercase tracking-[0.12em] text-black/45 underline-offset-4 hover:underline"
-        >
-          Continue shopping
-        </button>
+        <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3 text-xs font-semibold uppercase tracking-[0.12em] text-black/45">
+          <Link
+            href={`/products/${product.slug}`}
+            onClick={closeQuickBuy}
+            className="underline-offset-4 hover:underline"
+          >
+            View full details
+          </Link>
+          <button
+            type="button"
+            onClick={closeQuickBuy}
+            className="underline-offset-4 hover:underline"
+          >
+            Continue shopping
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -219,15 +255,8 @@ function QuickBuyContent({ product }: { product: StoreProduct }) {
 function QuickBuy() {
   const { quickBuyProduct, closeQuickBuy } = useCommerce();
   return (
-    <DialogShell
-      open={Boolean(quickBuyProduct)}
-      onClose={closeQuickBuy}
-      title="Quick buy"
-      wide
-    >
-      {quickBuyProduct && (
-        <QuickBuyContent key={quickBuyProduct.id} product={quickBuyProduct} />
-      )}
+    <DialogShell open={Boolean(quickBuyProduct)} onClose={closeQuickBuy} title="Quick buy" wide>
+      {quickBuyProduct && <QuickBuyContent key={quickBuyProduct.id} product={quickBuyProduct} />}
     </DialogShell>
   );
 }
@@ -242,11 +271,13 @@ async function validateCart(cart: CartLine[]): Promise<CartAvailability[]> {
   const response = await fetch('/api/cart/validate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ items: cart.map((line) => ({
-      listingId: line.listingId,
-      size: line.size,
-      displayedPrice: line.product.price,
-    })) }),
+    body: JSON.stringify({
+      items: cart.map((line) => ({
+        listingId: line.listingId,
+        size: line.size,
+        displayedPrice: line.product.price,
+      })),
+    }),
     cache: 'no-store',
   });
   const result = await response.json().catch(() => null);
@@ -257,15 +288,8 @@ async function validateCart(cart: CartLine[]): Promise<CartAvailability[]> {
 }
 
 function CartDrawer() {
-  const {
-    cart,
-    cartOpen,
-    closeCart,
-    subtotal,
-    removeFromCart,
-    openCheckout,
-    cartCount,
-  } = useCommerce();
+  const { cart, cartOpen, closeCart, subtotal, removeFromCart, openCheckout, cartCount } =
+    useCommerce();
   const [availability, setAvailability] = useState<Record<string, CartAvailability>>({});
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState('');
@@ -282,10 +306,17 @@ function CartDrawer() {
         }
       })
       .catch((error) => {
-        if (active) setCheckError(error instanceof Error ? error.message : 'Availability could not be checked.');
+        if (active)
+          setCheckError(
+            error instanceof Error ? error.message : 'Availability could not be checked.'
+          );
       })
-      .finally(() => { if (active) setChecking(false); });
-    return () => { active = false; };
+      .finally(() => {
+        if (active) setChecking(false);
+      });
+    return () => {
+      active = false;
+    };
   }, [cartOpen, cart]);
 
   const handleCheckout = async () => {
@@ -367,8 +398,18 @@ function CartDrawer() {
                         {formatPrice(line.product.price * line.quantity, 'MZN')}
                       </p>
                     </div>
-                    {availability[line.listingId]?.status === 'unavailable' && <p className="mt-2 text-xs font-semibold text-red-700">This item is no longer available. Please remove it.</p>}
-                    {availability[line.listingId]?.status === 'price_changed' && <p className="mt-2 text-xs font-semibold text-red-700">The price changed to {formatPrice(availability[line.listingId].currentPrice ?? 0, 'MZN')}. Remove and add it again to review the new price.</p>}
+                    {availability[line.listingId]?.status === 'unavailable' && (
+                      <p className="mt-2 text-xs font-semibold text-red-700">
+                        This item is no longer available. Please remove it.
+                      </p>
+                    )}
+                    {availability[line.listingId]?.status === 'price_changed' && (
+                      <p className="mt-2 text-xs font-semibold text-red-700">
+                        The price changed to{' '}
+                        {formatPrice(availability[line.listingId].currentPrice ?? 0, 'MZN')}. Remove
+                        and add it again to review the new price.
+                      </p>
+                    )}
                   </div>
                 </article>
               ))}
@@ -390,7 +431,11 @@ function CartDrawer() {
               >
                 {checking ? 'Checking bag' : 'Checkout'} <ArrowRight className="h-4 w-4" />
               </button>
-              {checkError && <p className="mt-3 text-center text-xs text-red-700" role="alert">{checkError}</p>}
+              {checkError && (
+                <p className="mt-3 text-center text-xs text-red-700" role="alert">
+                  {checkError}
+                </p>
+              )}
               <p className="mt-3 flex items-center justify-center gap-2 text-[11px] text-black/45">
                 <LockKeyhole className="h-3 w-3" /> Secure checkout · Buyer protection
               </p>
@@ -403,7 +448,8 @@ function CartDrawer() {
 }
 
 type CheckoutStep = 'contact' | 'delivery' | 'payment' | 'review' | 'confirmation';
-type PaymentState = 'idle' | 'waiting' | 'processing' | 'timedOut' | 'paid' | 'paidNeedsHelp' | 'failed';
+type PaymentState =
+  'idle' | 'waiting' | 'processing' | 'timedOut' | 'paid' | 'paidNeedsHelp' | 'failed';
 
 type ShippingMethod = {
   code: string;
@@ -463,7 +509,9 @@ function CheckoutSheet() {
       .then((methods) => {
         if (!active) return;
         setShippingMethods(methods);
-        setShippingMethodCode((current) => methods.some((method) => method.code === current) ? current : methods[0]?.code ?? '');
+        setShippingMethodCode((current) =>
+          methods.some((method) => method.code === current) ? current : (methods[0]?.code ?? '')
+        );
       })
       .catch(() => {
         if (active) {
@@ -471,8 +519,12 @@ function CheckoutSheet() {
           setShippingMethodCode('');
         }
       })
-      .finally(() => { if (active) setShippingLoading(false); });
-    return () => { active = false; };
+      .finally(() => {
+        if (active) setShippingLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, [checkoutOpen, province]);
 
   const index = checkoutSteps.indexOf(step);
@@ -485,7 +537,10 @@ function CheckoutSheet() {
       setError('Add your name, email and a valid phone number.');
       return;
     }
-    if (step === 'delivery' && (!address.trim() || !city.trim() || !province.trim() || !selectedShipping)) {
+    if (
+      step === 'delivery' &&
+      (!address.trim() || !city.trim() || !province.trim() || !selectedShipping)
+    ) {
       setError('Add a complete delivery address.');
       return;
     }
@@ -564,7 +619,8 @@ function CheckoutSheet() {
           }),
         });
         const orderResult = await orderResponse.json().catch(() => null);
-        if (!orderResponse.ok) throw new Error(orderResult?.error || 'Could not reserve this order.');
+        if (!orderResponse.ok)
+          throw new Error(orderResult?.error || 'Could not reserve this order.');
         activeOrderId = orderResult.orderId;
         setOrderId(activeOrderId);
         setOrderNumber(orderResult.orderNumber);
@@ -588,13 +644,17 @@ function CheckoutSheet() {
         setOrderId('');
         return;
       }
-      if (!initiateResponse.ok) throw new Error(initiation?.error || 'Could not start the M-Pesa request.');
+      if (!initiateResponse.ok)
+        throw new Error(initiation?.error || 'Could not start the M-Pesa request.');
 
       if (initiation.orderNumber) setOrderNumber(initiation.orderNumber);
       setPaymentState('waiting');
 
       for (let attempt = 0; attempt < 12; attempt += 1) {
-        const statusResponse = await fetch(`/api/payments/${initiation.paymentId}/status?orderId=${activeOrderId}`, { cache: 'no-store' });
+        const statusResponse = await fetch(
+          `/api/payments/${initiation.paymentId}/status?orderId=${activeOrderId}`,
+          { cache: 'no-store' }
+        );
         const status = await statusResponse.json().catch(() => null);
         if (status?.status === 'PAID') {
           setOrderNumber(status.orderNumber || orderNumber);
@@ -604,7 +664,9 @@ function CheckoutSheet() {
         }
         if (status?.status === 'FAILED' || status?.status === 'CANCELLED') {
           setPaymentState('failed');
-          setError('The M-Pesa request was not completed. You can try again; no order was marked paid.');
+          setError(
+            'The M-Pesa request was not completed. You can try again; no order was marked paid.'
+          );
           setCheckoutAttemptId('');
           setCheckoutSecret('');
           setOrderId('');
@@ -617,10 +679,16 @@ function CheckoutSheet() {
       }
 
       setPaymentState('timedOut');
-      setError('Still waiting for payment confirmation. Check again; no second payment request will be sent.');
+      setError(
+        'Still waiting for payment confirmation. Check again; no second payment request will be sent.'
+      );
     } catch (paymentError) {
       setPaymentState('failed');
-      setError(paymentError instanceof Error ? paymentError.message : 'M-Pesa checkout is temporarily unavailable.');
+      setError(
+        paymentError instanceof Error
+          ? paymentError.message
+          : 'M-Pesa checkout is temporarily unavailable.'
+      );
     }
   };
 
@@ -649,7 +717,7 @@ function CheckoutSheet() {
                   <span
                     className={cn(
                       'grid h-7 w-7 place-items-center rounded-full text-[10px] font-bold uppercase',
-                      itemIndex <= index ? 'bg-black text-white' : 'bg-black/8 text-black/35',
+                      itemIndex <= index ? 'bg-black text-white' : 'bg-black/8 text-black/35'
                     )}
                   >
                     {itemIndex < index ? <Check className="h-3 w-3" /> : itemIndex + 1}
@@ -668,13 +736,30 @@ function CheckoutSheet() {
 
         {step === 'contact' && (
           <div className="mt-8">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-black/45">Guest checkout</p>
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-black/45">
+              Guest checkout
+            </p>
             <h2 className="mt-2 text-3xl font-black tracking-[-0.05em]">Where can we reach you?</h2>
-            <p className="mt-2 text-sm leading-6 text-black/55">No account required. We’ll send order updates here.</p>
+            <p className="mt-2 text-sm leading-6 text-black/55">
+              No account required. We’ll send order updates here.
+            </p>
             <div className="mt-7 space-y-4">
               <Field label="Full name" value={name} onChange={setName} autoComplete="name" />
-              <Field label="Email" type="email" value={email} onChange={setEmail} autoComplete="email" />
-              <Field label="Phone" value={phone} onChange={setPhone} prefix="+258" placeholder="84 XXX XXXX" autoComplete="tel" />
+              <Field
+                label="Email"
+                type="email"
+                value={email}
+                onChange={setEmail}
+                autoComplete="email"
+              />
+              <Field
+                label="Phone"
+                value={phone}
+                onChange={setPhone}
+                prefix="+258"
+                placeholder="84 XXX XXXX"
+                autoComplete="tel"
+              />
             </div>
           </div>
         )}
@@ -684,27 +769,76 @@ function CheckoutSheet() {
             <p className="text-xs font-bold uppercase tracking-[0.14em] text-black/45">Delivery</p>
             <h2 className="mt-2 text-3xl font-black tracking-[-0.05em]">Where should it go?</h2>
             <div className="mt-7 space-y-4">
-              <Field label="Address line 1" value={address} onChange={setAddress} autoComplete="address-line1" />
-              <Field label="Address line 2 (optional)" value={addressLine2} onChange={setAddressLine2} autoComplete="address-line2" />
+              <Field
+                label="Address line 1"
+                value={address}
+                onChange={setAddress}
+                autoComplete="address-line1"
+              />
+              <Field
+                label="Address line 2 (optional)"
+                value={addressLine2}
+                onChange={setAddressLine2}
+                autoComplete="address-line2"
+              />
               <div className="grid grid-cols-2 gap-3">
                 <Field label="City" value={city} onChange={setCity} autoComplete="address-level2" />
-                <Field label="Province" value={province} onChange={setProvince} autoComplete="address-level1" />
+                <Field
+                  label="Province"
+                  value={province}
+                  onChange={setProvince}
+                  autoComplete="address-level1"
+                />
               </div>
-              <Field label="Postal code (optional)" value={postalCode} onChange={setPostalCode} autoComplete="postal-code" />
-              <Field label="Delivery notes (optional)" value={deliveryNotes} onChange={setDeliveryNotes} />
+              <Field
+                label="Postal code (optional)"
+                value={postalCode}
+                onChange={setPostalCode}
+                autoComplete="postal-code"
+              />
+              <Field
+                label="Delivery notes (optional)"
+                value={deliveryNotes}
+                onChange={setDeliveryNotes}
+              />
               <p className="text-xs text-black/50">Country: Mozambique</p>
               <fieldset>
-                <legend className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-black/55">Delivery method</legend>
-                {shippingLoading && <p className="text-sm text-black/50">Checking delivery options…</p>}
-                {!shippingLoading && shippingMethods.length === 0 && <p className="rounded-2xl bg-amber-50 p-4 text-sm text-amber-900">No delivery method is currently available for this province.</p>}
+                <legend className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-black/55">
+                  Delivery method
+                </legend>
+                {shippingLoading && (
+                  <p className="text-sm text-black/50">Checking delivery options…</p>
+                )}
+                {!shippingLoading && shippingMethods.length === 0 && (
+                  <p className="rounded-2xl bg-amber-50 p-4 text-sm text-amber-900">
+                    No delivery method is currently available for this province.
+                  </p>
+                )}
                 <div className="space-y-2">
-                  {shippingMethods.map((method) => <label key={method.code} className={`flex cursor-pointer items-center justify-between gap-3 rounded-2xl border-2 bg-white p-4 ${shippingMethodCode === method.code ? 'border-black' : 'border-black/10'}`}>
-                    <span className="flex items-center gap-3">
-                      <input type="radio" name="shipping-method" value={method.code} checked={shippingMethodCode === method.code} onChange={() => setShippingMethodCode(method.code)} />
-                      <span><strong className="block text-sm">{method.name}</strong><span className="text-xs text-black/50">Estimated {method.estimated_min_days}–{method.estimated_max_days} business days</span></span>
-                    </span>
-                    <strong className="text-sm">{formatPrice(method.price, 'MZN')}</strong>
-                  </label>)}
+                  {shippingMethods.map((method) => (
+                    <label
+                      key={method.code}
+                      className={`flex cursor-pointer items-center justify-between gap-3 rounded-2xl border-2 bg-white p-4 ${shippingMethodCode === method.code ? 'border-black' : 'border-black/10'}`}
+                    >
+                      <span className="flex items-center gap-3">
+                        <input
+                          type="radio"
+                          name="shipping-method"
+                          value={method.code}
+                          checked={shippingMethodCode === method.code}
+                          onChange={() => setShippingMethodCode(method.code)}
+                        />
+                        <span>
+                          <strong className="block text-sm">{method.name}</strong>
+                          <span className="text-xs text-black/50">
+                            Estimated {method.estimated_min_days}–{method.estimated_max_days}{' '}
+                            business days
+                          </span>
+                        </span>
+                      </span>
+                      <strong className="text-sm">{formatPrice(method.price, 'MZN')}</strong>
+                    </label>
+                  ))}
                 </div>
               </fieldset>
             </div>
@@ -713,7 +847,9 @@ function CheckoutSheet() {
 
         {step === 'payment' && (
           <div className="mt-8">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-black/45">Express checkout</p>
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-black/45">
+              Express checkout
+            </p>
             <h2 className="mt-2 text-3xl font-black tracking-[-0.05em]">Choose how to pay.</h2>
             <div className="mt-7 space-y-3">
               <PaymentOption
@@ -736,19 +872,32 @@ function CheckoutSheet() {
             {paymentMethod === 'mpesa' && (
               <div className="mt-5 rounded-2xl bg-[#efede5] p-5">
                 <p className="text-sm font-bold">M-Pesa phone number</p>
-                <p className="mt-1 text-xs leading-5 text-black/50">We’ll send an M-Pesa prompt to this number. Confirm it on your phone with your M-Pesa PIN.</p>
+                <p className="mt-1 text-xs leading-5 text-black/50">
+                  We’ll send an M-Pesa prompt to this number. Confirm it on your phone with your
+                  M-Pesa PIN.
+                </p>
                 <div className="mt-4">
-                  <Field value={phone} onChange={setPhone} prefix="+258" placeholder="84 XXX XXXX" autoComplete="tel" />
+                  <Field
+                    value={phone}
+                    onChange={setPhone}
+                    prefix="+258"
+                    placeholder="84 XXX XXXX"
+                    autoComplete="tel"
+                  />
                 </div>
               </div>
             )}
             {!mpesaEnabled && paymentMethod === 'mpesa' && (
               <p className="mt-4 rounded-xl border border-black/10 bg-white p-3 text-xs leading-5 text-black/55">
-                M-Pesa checkout is not active on this deployment yet. No payment request will be sent.
+                M-Pesa checkout is not active on this deployment yet. No payment request will be
+                sent.
               </p>
             )}
             {!squareEnabled && (
-              <p className="mt-5 text-xs leading-5 text-black/45">International card payment will appear only when a supported merchant gateway is configured.</p>
+              <p className="mt-5 text-xs leading-5 text-black/45">
+                International card payment will appear only when a supported merchant gateway is
+                configured.
+              </p>
             )}
           </div>
         )}
@@ -759,35 +908,73 @@ function CheckoutSheet() {
             <h2 className="mt-2 text-3xl font-black tracking-[-0.05em]">Ready when you are.</h2>
             <div className="mt-7 space-y-4">
               {cart.map((line) => (
-                <div key={`${line.product.id}-${line.size}`} className="flex items-center gap-4 border-b border-black/10 pb-4">
+                <div
+                  key={`${line.product.id}-${line.size}`}
+                  className="flex items-center gap-4 border-b border-black/10 pb-4"
+                >
                   <div className="relative h-16 w-16 overflow-hidden rounded-xl bg-[#ece9e1]">
-                    <Image src={line.product.image} alt="" fill sizes="64px" className="object-cover" style={{ objectPosition: line.product.imagePosition }} />
+                    <Image
+                      src={line.product.image}
+                      alt=""
+                      fill
+                      sizes="64px"
+                      className="object-cover"
+                      style={{ objectPosition: line.product.imagePosition }}
+                    />
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-bold">{line.product.name}</p>
-                    <p className="text-xs text-black/45">{line.size} · Qty {line.quantity}</p>
+                    <p className="text-xs text-black/45">
+                      {line.size} · Qty {line.quantity}
+                    </p>
                   </div>
-                  <p className="text-sm font-bold">{formatPrice(line.product.price * line.quantity, 'MZN')}</p>
+                  <p className="text-sm font-bold">
+                    {formatPrice(line.product.price * line.quantity, 'MZN')}
+                  </p>
                 </div>
               ))}
             </div>
             <div className="mt-6 space-y-2 text-sm">
-              <div className="flex justify-between text-black/55"><span>Subtotal</span><span>{formatPrice(subtotal, 'MZN')}</span></div>
-              <div className="flex justify-between text-black/55"><span>Delivery</span><span>{formatPrice(shipping, 'MZN')}</span></div>
-              <p className="text-xs text-black/45">{selectedShipping?.name ?? 'Choose delivery method'} · {address}, {city}, {province}</p>
-              <div className="flex justify-between border-t border-black/10 pt-3 text-lg font-black"><span>Total</span><span>{formatPrice(total, 'MZN')}</span></div>
-              <p className="text-right text-xs text-black/45">Display estimate: <DisplayPrice amount={total} /> · M-Pesa charges MZN.</p>
+              <div className="flex justify-between text-black/55">
+                <span>Subtotal</span>
+                <span>{formatPrice(subtotal, 'MZN')}</span>
+              </div>
+              <div className="flex justify-between text-black/55">
+                <span>Delivery</span>
+                <span>{formatPrice(shipping, 'MZN')}</span>
+              </div>
+              <p className="text-xs text-black/45">
+                {selectedShipping?.name ?? 'Choose delivery method'} · {address}, {city}, {province}
+              </p>
+              <div className="flex justify-between border-t border-black/10 pt-3 text-lg font-black">
+                <span>Total</span>
+                <span>{formatPrice(total, 'MZN')}</span>
+              </div>
+              <p className="text-right text-xs text-black/45">
+                Display estimate: <DisplayPrice amount={total} /> · M-Pesa charges MZN.
+              </p>
             </div>
             {['waiting', 'processing'].includes(paymentState) && (
-              <div className="mt-6 rounded-2xl border border-acid bg-acid/20 p-5 text-center" role="status" aria-live="polite">
+              <div
+                className="mt-6 rounded-2xl border border-acid bg-acid/20 p-5 text-center"
+                role="status"
+                aria-live="polite"
+              >
                 <LoaderCircle className="mx-auto h-6 w-6 animate-spin" />
                 <p className="mt-3 text-sm font-black uppercase tracking-[0.12em]">
                   {paymentState === 'waiting' ? 'Check your phone' : 'Preparing your request'}
                 </p>
-                <p className="mt-1 text-xs text-black/55">Approve the M-Pesa request on your device.</p>
+                <p className="mt-1 text-xs text-black/55">
+                  Approve the M-Pesa request on your device.
+                </p>
               </div>
             )}
-            {paymentState === 'timedOut' && <p className="mt-6 rounded-2xl bg-amber-50 p-5 text-sm text-amber-900" role="status">Confirmation is taking longer than expected. You can check again without sending another request to your phone.</p>}
+            {paymentState === 'timedOut' && (
+              <p className="mt-6 rounded-2xl bg-amber-50 p-5 text-sm text-amber-900" role="status">
+                Confirmation is taking longer than expected. You can check again without sending
+                another request to your phone.
+              </p>
+            )}
           </div>
         )}
 
@@ -797,41 +984,123 @@ function CheckoutSheet() {
               <CheckCircle2 className="h-9 w-9" />
             </div>
             <p className="mt-7 text-xs font-bold uppercase tracking-[0.18em] text-black/45">
-              {paymentState === 'paidNeedsHelp' ? 'Payment received · order needs review' : 'Payment received'}
+              {paymentState === 'paidNeedsHelp'
+                ? 'Payment received · order needs review'
+                : 'Payment received'}
             </p>
             <h2 className="mt-2 text-4xl font-black tracking-[-0.06em]">
-              {paymentState === 'paidNeedsHelp' ? 'We’re reviewing your order.' : 'Order confirmed.'}
+              {paymentState === 'paidNeedsHelp'
+                ? 'We’re reviewing your order.'
+                : 'Order confirmed.'}
             </h2>
             <p className="mt-3 text-sm text-black/55">Order {orderNumber}</p>
             {paymentState === 'paidNeedsHelp' && (
               <p className="mt-3 rounded-xl bg-amber-100 p-3 text-sm text-amber-900">
-                Your payment is confirmed, but the item reservation expired before we could confirm fulfillment. Contact support with this order number.
+                Your payment is confirmed, but the item reservation expired before we could confirm
+                fulfillment. Contact support with this order number.
               </p>
             )}
             <div className="mt-7 w-full rounded-3xl bg-[#efede5] p-5 text-left text-sm">
-              {cart.map((line) => <div key={line.listingId} className="mb-3 flex justify-between gap-4 border-b border-black/10 pb-3"><span>{line.product.name} · {line.size}</span><strong>{formatPrice(line.product.price, 'MZN')}</strong></div>)}
-              <div className="flex justify-between"><span className="text-black/50">Amount paid</span><strong>{formatPrice(confirmedTotal ?? total, 'MZN')}</strong></div>
-              <div className="mt-3 flex justify-between"><span className="text-black/50">Payment</span><strong>{paymentMethod === 'mpesa' ? 'M-Pesa' : 'Card'}</strong></div>
-              <div className="mt-3 flex justify-between gap-4"><span className="text-black/50">Delivery</span><strong className="text-right">{selectedShipping?.name} · {address}, {city}, {province}</strong></div>
+              {cart.map((line) => (
+                <div
+                  key={line.listingId}
+                  className="mb-3 flex justify-between gap-4 border-b border-black/10 pb-3"
+                >
+                  <span>
+                    {line.product.name} · {line.size}
+                  </span>
+                  <strong>{formatPrice(line.product.price, 'MZN')}</strong>
+                </div>
+              ))}
+              <div className="flex justify-between">
+                <span className="text-black/50">Amount paid</span>
+                <strong>{formatPrice(confirmedTotal ?? total, 'MZN')}</strong>
+              </div>
+              <div className="mt-3 flex justify-between">
+                <span className="text-black/50">Payment</span>
+                <strong>{paymentMethod === 'mpesa' ? 'M-Pesa' : 'Card'}</strong>
+              </div>
+              <div className="mt-3 flex justify-between gap-4">
+                <span className="text-black/50">Delivery</span>
+                <strong className="text-right">
+                  {selectedShipping?.name} · {address}, {city}, {province}
+                </strong>
+              </div>
             </div>
-            <p className="mt-4 text-xs text-black/50">Next: we’ll prepare your verified piece and update your order timeline.</p>
-            <button type="button" onClick={close} className="mt-7 h-13 w-full rounded-full bg-black text-xs font-bold uppercase tracking-[0.14em] text-white transition hover:bg-acid hover:text-black">Continue shopping</button>
-            <Link href={`/order/${orderNumber}`} className="mt-4 text-xs font-bold uppercase tracking-[0.12em] underline underline-offset-4">Track order</Link>
+            <p className="mt-4 text-xs text-black/50">
+              Next: we’ll prepare your verified piece and update your order timeline.
+            </p>
+            <button
+              type="button"
+              onClick={close}
+              className="h-13 mt-7 w-full rounded-full bg-black text-xs font-bold uppercase tracking-[0.14em] text-white transition hover:bg-acid hover:text-black"
+            >
+              Continue shopping
+            </button>
+            <Link
+              href={`/order/${orderNumber}`}
+              className="mt-4 text-xs font-bold uppercase tracking-[0.12em] underline underline-offset-4"
+            >
+              Track order
+            </Link>
           </div>
         )}
 
-        {error && <p className="mt-5 rounded-xl bg-red-50 p-3 text-sm font-medium text-red-700" role="alert">{error}</p>}
+        {error && (
+          <p
+            className="mt-5 rounded-xl bg-red-50 p-3 text-sm font-medium text-red-700"
+            role="alert"
+          >
+            {error}
+          </p>
+        )}
 
         {!['review', 'confirmation'].includes(step) && (
           <div className="mt-8 flex items-center gap-3">
-            {step !== 'contact' && <button type="button" onClick={back} className="grid h-13 w-13 shrink-0 place-items-center rounded-full border border-black/15 bg-white" aria-label="Previous checkout step"><ArrowLeft className="h-4 w-4" /></button>}
-            <button type="button" onClick={next} className="flex h-13 flex-1 items-center justify-center gap-2 rounded-full bg-black text-xs font-bold uppercase tracking-[0.14em] text-white transition hover:bg-acid hover:text-black">Continue <ArrowRight className="h-4 w-4" /></button>
+            {step !== 'contact' && (
+              <button
+                type="button"
+                onClick={back}
+                className="h-13 w-13 grid shrink-0 place-items-center rounded-full border border-black/15 bg-white"
+                aria-label="Previous checkout step"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={next}
+              className="h-13 flex flex-1 items-center justify-center gap-2 rounded-full bg-black text-xs font-bold uppercase tracking-[0.14em] text-white transition hover:bg-acid hover:text-black"
+            >
+              Continue <ArrowRight className="h-4 w-4" />
+            </button>
           </div>
         )}
         {step === 'review' && (
           <div className="mt-7 flex items-center gap-3">
-            <button type="button" onClick={back} disabled={paymentState === 'waiting' || paymentState === 'processing'} className="grid h-13 w-13 shrink-0 place-items-center rounded-full border border-black/15 bg-white disabled:opacity-40" aria-label="Previous checkout step"><ArrowLeft className="h-4 w-4" /></button>
-            <button type="button" onClick={pay} disabled={paymentState === 'waiting' || paymentState === 'processing'} className="flex h-13 flex-1 items-center justify-center gap-2 rounded-full bg-black text-xs font-bold uppercase tracking-[0.14em] text-white transition hover:bg-acid hover:text-black disabled:opacity-50">{paymentState === 'waiting' || paymentState === 'processing' ? 'Waiting for approval' : paymentState === 'timedOut' ? 'Check payment status' : paymentMethod === 'mpesa' ? 'Continue with M-Pesa' : 'Pay securely'}</button>
+            <button
+              type="button"
+              onClick={back}
+              disabled={paymentState === 'waiting' || paymentState === 'processing'}
+              className="h-13 w-13 grid shrink-0 place-items-center rounded-full border border-black/15 bg-white disabled:opacity-40"
+              aria-label="Previous checkout step"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={pay}
+              disabled={paymentState === 'waiting' || paymentState === 'processing'}
+              className="h-13 flex flex-1 items-center justify-center gap-2 rounded-full bg-black text-xs font-bold uppercase tracking-[0.14em] text-white transition hover:bg-acid hover:text-black disabled:opacity-50"
+            >
+              {paymentState === 'waiting' || paymentState === 'processing'
+                ? 'Waiting for approval'
+                : paymentState === 'timedOut'
+                  ? 'Check payment status'
+                  : paymentMethod === 'mpesa'
+                    ? 'Continue with M-Pesa'
+                    : 'Pay securely'}
+            </button>
           </div>
         )}
       </div>
@@ -858,21 +1127,71 @@ function Field({
 }) {
   return (
     <label className="block">
-      {label && <span className="mb-2 block text-[11px] font-bold uppercase tracking-[0.12em] text-black/55">{label}</span>}
-      <span className="flex h-13 items-center rounded-2xl border border-black/15 bg-white px-4 focus-within:border-black focus-within:ring-2 focus-within:ring-acid/70">
-        {prefix && <span className="mr-2 border-r border-black/10 pr-2 text-sm font-bold">{prefix}</span>}
-        <input type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} autoComplete={autoComplete} className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-black/30" />
+      {label && (
+        <span className="mb-2 block text-[11px] font-bold uppercase tracking-[0.12em] text-black/55">
+          {label}
+        </span>
+      )}
+      <span className="h-13 flex items-center rounded-2xl border border-black/15 bg-white px-4 focus-within:border-black focus-within:ring-2 focus-within:ring-acid/70">
+        {prefix && (
+          <span className="mr-2 border-r border-black/10 pr-2 text-sm font-bold">{prefix}</span>
+        )}
+        <input
+          type={type}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          autoComplete={autoComplete}
+          className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-black/30"
+        />
       </span>
     </label>
   );
 }
 
-function PaymentOption({ selected, onClick, icon, title, detail }: { selected: boolean; onClick: () => void; icon: React.ReactNode; title: string; detail: string }) {
+function PaymentOption({
+  selected,
+  onClick,
+  icon,
+  title,
+  detail,
+}: {
+  selected: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  title: string;
+  detail: string;
+}) {
   return (
-    <button type="button" onClick={onClick} aria-pressed={selected} className={cn('flex w-full items-center gap-4 rounded-2xl border-2 bg-white p-4 text-left transition', selected ? 'border-black' : 'border-transparent hover:border-black/15')}>
-      <span className={cn('grid h-11 w-11 place-items-center rounded-full', selected ? 'bg-acid' : 'bg-black/5')}>{icon}</span>
-      <span className="flex-1"><strong className="block text-sm">{title}</strong><span className="text-xs text-black/50">{detail}</span></span>
-      <span className={cn('grid h-5 w-5 place-items-center rounded-full border', selected ? 'border-black bg-black text-white' : 'border-black/20')}>{selected && <Check className="h-3 w-3" />}</span>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={selected}
+      className={cn(
+        'flex w-full items-center gap-4 rounded-2xl border-2 bg-white p-4 text-left transition',
+        selected ? 'border-black' : 'border-transparent hover:border-black/15'
+      )}
+    >
+      <span
+        className={cn(
+          'grid h-11 w-11 place-items-center rounded-full',
+          selected ? 'bg-acid' : 'bg-black/5'
+        )}
+      >
+        {icon}
+      </span>
+      <span className="flex-1">
+        <strong className="block text-sm">{title}</strong>
+        <span className="text-xs text-black/50">{detail}</span>
+      </span>
+      <span
+        className={cn(
+          'grid h-5 w-5 place-items-center rounded-full border',
+          selected ? 'border-black bg-black text-white' : 'border-black/20'
+        )}
+      >
+        {selected && <Check className="h-3 w-3" />}
+      </span>
     </button>
   );
 }
@@ -882,12 +1201,22 @@ function StickyBag() {
   if (cartCount === 0) return null;
   return (
     <div className="fixed bottom-4 left-1/2 z-50 flex w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 items-center rounded-full border border-white/20 bg-black/90 p-1.5 pl-5 text-white shadow-2xl backdrop-blur-xl md:bottom-6">
-      <button type="button" onClick={openCart} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+      <button
+        type="button"
+        onClick={openCart}
+        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+      >
         <ShoppingBag className="h-4 w-4 text-acid" />
         <span className="text-xs font-bold uppercase tracking-[0.12em]">Bag · {cartCount}</span>
         <span className="truncate text-xs text-white/60">{formatPrice(subtotal, 'MZN')}</span>
       </button>
-      <button type="button" onClick={openCheckout} className="h-11 rounded-full bg-acid px-5 text-[11px] font-black uppercase tracking-[0.13em] text-black">Checkout</button>
+      <button
+        type="button"
+        onClick={openCheckout}
+        className="h-11 rounded-full bg-acid px-5 text-[11px] font-black uppercase tracking-[0.13em] text-black"
+      >
+        Checkout
+      </button>
     </div>
   );
 }

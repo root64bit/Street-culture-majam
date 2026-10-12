@@ -29,14 +29,17 @@ export default async function EditAdminProductPage({
   const caps = await supabase.rpc('my_capabilities');
   if (caps.error) throw new Error('Permissions unavailable.');
   const can = (value: string) => caps.data?.some((cap) => cap.capability === value) ?? false;
-  const [product, brands, categories] = await Promise.all([
+  const [product, brands, categories, diagnostics] = await Promise.all([
     supabase.from('products').select('*').eq('id', id).maybeSingle(),
     supabase.from('brands').select('id,name').eq('active', true).order('name'),
     supabase.from('categories').select('id,name').eq('active', true).order('sort_order'),
+    supabase.rpc('admin_product_publication_diagnostics', { target_product_id: id }).maybeSingle(),
   ]);
-  if (product.error || brands.error || categories.error) throw new Error('Product unavailable.');
+  if (product.error || brands.error || categories.error || diagnostics.error)
+    throw new Error('Product unavailable.');
   if (!product.data) notFound();
   const record = product.data;
+  const visibility = diagnostics.data;
   const basePath = `/admin/products/${id}`;
   const photos =
     tab === 'media' || tab === 'general'
@@ -108,6 +111,61 @@ export default async function EditAdminProductPage({
           </Link>
         )}
       </div>
+      {visibility && (
+        <div
+          className={`mt-6 rounded-2xl border p-5 ${visibility.publicly_visible ? 'border-[#8bbf93] bg-[#eff9ed]' : 'border-[#e3c584] bg-[#fff8e8]'}`}
+        >
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.15em]">
+                {visibility.publicly_visible ? 'Publicly visible' : 'Not public — action required'}
+              </p>
+              <p className="mt-2 text-sm text-[#61766b]">
+                Publication stage: {visibility.stage.replaceAll('_', ' ')} ·{' '}
+                {visibility.media_count} images · {visibility.active_variant_count} active variants
+                · {visibility.live_listing_count} live listings
+              </p>
+            </div>
+            {visibility.publicly_visible && (
+              <Link
+                href={`/products/${record.slug}`}
+                className="rounded-full bg-[#0d211a] px-4 py-2 text-xs font-bold text-white"
+              >
+                Preview product
+              </Link>
+            )}
+          </div>
+          {!visibility.publicly_visible && visibility.blocker_messages.length > 0 && (
+            <ul className="mt-4 grid gap-2 sm:grid-cols-2">
+              {visibility.blocker_messages.map((message, index) => {
+                const code = visibility.blocker_codes[index] ?? 'METADATA';
+                const targetTab =
+                  code === 'MEDIA'
+                    ? 'media'
+                    : code === 'VARIANT'
+                      ? 'variants'
+                      : ['LISTING', 'AUTHENTICATION', 'PUBLICATION'].includes(code)
+                        ? 'listings'
+                        : 'general';
+                return (
+                  <li
+                    key={`${code}-${message}`}
+                    className="rounded-xl bg-white/70 p-3 text-xs leading-5"
+                  >
+                    <strong>{message}</strong>{' '}
+                    <Link
+                      href={`${basePath}?tab=${targetTab}`}
+                      className="text-[#065f46] underline underline-offset-2"
+                    >
+                      Fix this
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
       <nav
         aria-label="Product workspace tabs"
         className="my-6 flex gap-1 overflow-x-auto border-b border-[#dce6dc]"

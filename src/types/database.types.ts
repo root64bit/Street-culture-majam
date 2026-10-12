@@ -932,9 +932,15 @@ isOneToOne: false
                 }
           }
           Views: {
+            "public_catalog_products": {
+                  Row: {
+                    "asking_price": number | null,"authentication_status": string | null,"brand_id": string | null,"brand_name": string | null,"brand_slug": string | null,"category_id": string | null,"category_name": string | null,"category_slug": string | null,"colorway": string | null,"condition": string | null,"conditions": string[] | null,"currency": string | null,"description": string | null,"featured": boolean | null,"image_path": string | null,"listing_id": string | null,"listing_options": Json | null,"model": string | null,"most_wanted": boolean | null,"ownership_type": Database["public"]['Enums']["listing_ownership_type"] | null,"product_id": string | null,"product_name": string | null,"published_at": string | null,"release_year": number | null,"search_text": string | null,"size": string | null,"size_system": string | null,"sizes": string[] | null,"sku": string | null,"slug": string | null,"style_code": string | null,"variant_id": string | null
+                  }
+                  Relationships: []
+                },
             "public_catalog_listings": {
                   Row: {
-                    "asking_price": number | null,"authentication_status": string | null,"brand_id": string | null,"brand_name": string | null,"brand_slug": string | null,"category_id": string | null,"category_name": string | null,"category_slug": string | null,"colorway": string | null,"condition": string | null,"currency": string | null,"description": string | null,"featured": boolean | null,"image_path": string | null,"listing_id": string | null,"model": string | null,"ownership_type": Database["public"]['Enums']["listing_ownership_type"] | null,"product_id": string | null,"product_name": string | null,"published_at": string | null,"release_year": number | null,"search_text": string | null,"size": string | null,"size_system": string | null,"sku": string | null,"slug": string | null,"style_code": string | null,"variant_id": string | null
+                    "asking_price": number | null,"authentication_status": string | null,"brand_id": string | null,"brand_name": string | null,"brand_slug": string | null,"category_id": string | null,"category_name": string | null,"category_slug": string | null,"colorway": string | null,"condition": string | null,"currency": string | null,"description": string | null,"featured": boolean | null,"image_path": string | null,"listing_id": string | null,"model": string | null,"most_wanted": boolean | null,"ownership_type": Database["public"]['Enums']["listing_ownership_type"] | null,"product_id": string | null,"product_name": string | null,"published_at": string | null,"release_year": number | null,"search_text": string | null,"size": string | null,"size_system": string | null,"sku": string | null,"slug": string | null,"style_code": string | null,"variant_id": string | null
                   }
                   Relationships: [
                     {
@@ -993,6 +999,11 @@ isOneToOne: false
 "admin_product_pricing":
 { Args: { "target_product_id": string }; Returns: {
               "highest_live": number,"live_units": number,"lowest_live": number,"recent_sale": number,"recent_sale_at": string
+            }[]
+                           },
+"admin_product_publication_diagnostics":
+{ Args: { "target_product_id": string }; Returns: {
+              "active_variant_count": number,"blocker_codes": string[],"blocker_messages": string[],"draft_listing_count": number,"live_listing_count": number,"media_count": number,"publicly_visible": boolean,"stage": string
             }[]
                            },
 "admin_product_variants":
@@ -1088,6 +1099,9 @@ isOneToOne: false
                            },
 "public_asset_is_unused":
 { Args: { "asset_bucket": string,"asset_path": string }; Returns: boolean
+                           },
+"public_catalog_facets":
+{ Args: Record<PropertyKey, never>; Returns: Json
                            },
 "publish_store_listing":
 { Args: { "decision_notes": string,"target_listing_id": string }; Returns: string
