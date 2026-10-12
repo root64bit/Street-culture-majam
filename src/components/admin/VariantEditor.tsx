@@ -45,6 +45,33 @@ export function VariantEditor({ productId, variant }: { productId: string; varia
       setBusy(false);
     }
   }
+  async function removeVariant() {
+    if (
+      !window.confirm(
+        `Delete variant ${variant.size} ${variant.size_system}? This cannot be undone.`
+      )
+    )
+      return;
+    setBusy(true);
+    setMessage('');
+    try {
+      const response = await fetch(`/api/admin/products/${productId}/variants/${variant.id}`, {
+        method: 'DELETE',
+      });
+      const body: { error?: string } = await response.json();
+      if (!response.ok) {
+        setMessage(body.error ?? 'Delete failed.');
+      } else {
+        setMessage('Variant deleted.');
+        router.refresh();
+      }
+    } catch {
+      setMessage('Delete failed.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <details>
       <summary className="cursor-pointer text-xs font-bold text-[#126347]">Edit variant</summary>
@@ -100,17 +127,26 @@ export function VariantEditor({ productId, variant }: { productId: string; varia
             className="ml-2 accent-[#065f46]"
           />
         </label>
-        <div className="sm:col-span-2">
-          {message && (
-            <p role="status" className="mb-2 text-xs">
-              {message}
-            </p>
-          )}
+        {message && (
+          <p role="status" className="text-xs sm:col-span-2">
+            {message}
+          </p>
+        )}
+        <div className="flex flex-wrap items-center justify-between gap-3 sm:col-span-2">
           <button
+            type="submit"
             disabled={busy}
-            className="rounded-lg bg-[#0d211a] px-4 py-2 text-xs font-bold text-white"
+            className="rounded-lg bg-[#0d211a] px-4 py-2 text-xs font-bold text-white transition hover:bg-[#1a382e] disabled:opacity-50"
           >
             {busy ? 'Saving…' : 'Save variant'}
+          </button>
+          <button
+            type="button"
+            onClick={() => void removeVariant()}
+            disabled={busy}
+            className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+          >
+            {busy ? 'Deleting…' : 'Delete variant'}
           </button>
         </div>
       </form>

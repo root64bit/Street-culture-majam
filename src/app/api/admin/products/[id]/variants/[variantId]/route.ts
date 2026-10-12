@@ -43,3 +43,56 @@ export async function PATCH(
   if (!result.data) return adminFailure('NOT_FOUND', 'Variant not found.', 404);
   return NextResponse.json({ id: result.data.id });
 }
+
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string; variantId: string }> }
+) {
+  const access = await capabilityApiClient(['products.write']);
+  if ('error' in access)
+    return adminFailure('FORBIDDEN', access.error ?? 'Access denied.', access.status);
+  const { id, variantId } = await params;
+  if (
+    !z.string().uuid().safeParse(id).success ||
+    !z.string().uuid().safeParse(variantId).success
+  )
+    return adminFailure('VALIDATION', 'Valid product and variant IDs required.');
+
+  // Check if this variant has active, reserved or sold inventory
+  const { data: protectedListings, error: checkError } = await access.supabase
+    .from('listings')
+    .select('id, status')
+    .eq('variant_id', variantId)
+    .in('status', ['LIVE', 'RESERVED', 'SOLD'])
+    .limit(1);
+
+  if (checkError) return databaseFailure(checkError, 'variant_check');
+  if (protectedListings && protectedListings.length > 0) {
+    return adminFailure(
+      'CONFLICT',
+      'Cannot delete a variant with live, reserved or sold inventory. Deactivate the listing first.',
+      409
+    );
+  }
+
+  // Remove any unlisted drafts attached to this variant
+  await access.supabase
+    .from('listings')
+    .delete()
+    .eq('variant_id', variantId)
+    .eq('status', 'DRAFT');
+
+  // Delete the variant record
+  const result = await access.supabase
+    .from('product_variants')
+    .delete()
+    .eq('id', variantId)
+    .eq('product_id', id)
+    .select('id')
+    .maybeSingle();
+
+  if (result.error) return databaseFailure(result.error, 'variant_delete');
+  if (!result.data) return adminFailure('NOT_FOUND', 'Variant not found.', 404);
+  return NextResponse.json({ id: result.data.id, deleted: true });
+}
+

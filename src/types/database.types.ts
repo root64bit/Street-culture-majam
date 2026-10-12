@@ -171,6 +171,12 @@ isOneToOne: false
 isOneToOne: false
       referencedRelation: "public_catalog_listings"
       referencedColumns: ["listing_id"]
+    },{
+      foreignKeyName: "authentication_records_listing_id_fkey"
+      columns: ["listing_id"]
+isOneToOne: false
+      referencedRelation: "public_catalog_products"
+      referencedColumns: ["listing_id"]
     }
                   ]
                 },"brands": {
@@ -214,6 +220,12 @@ isOneToOne: false
       columns: ["listing_id"]
 isOneToOne: false
       referencedRelation: "public_catalog_listings"
+      referencedColumns: ["listing_id"]
+    },{
+      foreignKeyName: "cart_items_listing_id_fkey"
+      columns: ["listing_id"]
+isOneToOne: false
+      referencedRelation: "public_catalog_products"
       referencedColumns: ["listing_id"]
     }
                   ]
@@ -259,6 +271,12 @@ isOneToOne: false
 isOneToOne: false
       referencedRelation: "public_catalog_listings"
       referencedColumns: ["category_id"]
+    },{
+      foreignKeyName: "categories_parent_id_fkey"
+      columns: ["parent_id"]
+isOneToOne: false
+      referencedRelation: "public_catalog_products"
+      referencedColumns: ["category_id"]
     }
                   ]
                 },"commission_rules": {
@@ -285,6 +303,12 @@ isOneToOne: false
       referencedRelation: "public_catalog_listings"
       referencedColumns: ["brand_id"]
     },{
+      foreignKeyName: "commission_rules_brand_id_fkey"
+      columns: ["brand_id"]
+isOneToOne: false
+      referencedRelation: "public_catalog_products"
+      referencedColumns: ["brand_id"]
+    },{
       foreignKeyName: "commission_rules_category_id_fkey"
       columns: ["category_id"]
 isOneToOne: false
@@ -295,6 +319,12 @@ isOneToOne: false
       columns: ["category_id"]
 isOneToOne: false
       referencedRelation: "public_catalog_listings"
+      referencedColumns: ["category_id"]
+    },{
+      foreignKeyName: "commission_rules_category_id_fkey"
+      columns: ["category_id"]
+isOneToOne: false
+      referencedRelation: "public_catalog_products"
       referencedColumns: ["category_id"]
     }
                   ]
@@ -339,6 +369,12 @@ isOneToOne: false
       columns: ["category_id"]
 isOneToOne: false
       referencedRelation: "public_catalog_listings"
+      referencedColumns: ["category_id"]
+    },{
+      foreignKeyName: "consignment_submissions_category_id_fkey"
+      columns: ["category_id"]
+isOneToOne: false
+      referencedRelation: "public_catalog_products"
       referencedColumns: ["category_id"]
     },{
       foreignKeyName: "consignment_submissions_product_id_fkey"
@@ -458,6 +494,12 @@ isOneToOne: false
 isOneToOne: false
       referencedRelation: "public_catalog_listings"
       referencedColumns: ["listing_id"]
+    },{
+      foreignKeyName: "offers_listing_id_fkey"
+      columns: ["listing_id"]
+isOneToOne: false
+      referencedRelation: "public_catalog_products"
+      referencedColumns: ["listing_id"]
     }
                   ]
                 },"order_events": {
@@ -513,6 +555,12 @@ isOneToOne: false
       columns: ["listing_id"]
 isOneToOne: false
       referencedRelation: "public_catalog_listings"
+      referencedColumns: ["listing_id"]
+    },{
+      foreignKeyName: "order_items_listing_id_fkey"
+      columns: ["listing_id"]
+isOneToOne: false
+      referencedRelation: "public_catalog_products"
       referencedColumns: ["listing_id"]
     },{
       foreignKeyName: "order_items_order_id_fkey"
@@ -689,6 +737,12 @@ isOneToOne: false
       referencedRelation: "public_catalog_listings"
       referencedColumns: ["listing_id"]
     },{
+      foreignKeyName: "product_import_rows_listing_id_fkey"
+      columns: ["listing_id"]
+isOneToOne: false
+      referencedRelation: "public_catalog_products"
+      referencedColumns: ["listing_id"]
+    },{
       foreignKeyName: "product_import_rows_product_id_fkey"
       columns: ["product_id"]
 isOneToOne: false
@@ -758,6 +812,12 @@ isOneToOne: false
       referencedRelation: "public_catalog_listings"
       referencedColumns: ["brand_id"]
     },{
+      foreignKeyName: "products_brand_id_fkey"
+      columns: ["brand_id"]
+isOneToOne: false
+      referencedRelation: "public_catalog_products"
+      referencedColumns: ["brand_id"]
+    },{
       foreignKeyName: "products_category_id_fkey"
       columns: ["category_id"]
 isOneToOne: false
@@ -768,6 +828,12 @@ isOneToOne: false
       columns: ["category_id"]
 isOneToOne: false
       referencedRelation: "public_catalog_listings"
+      referencedColumns: ["category_id"]
+    },{
+      foreignKeyName: "products_category_id_fkey"
+      columns: ["category_id"]
+isOneToOne: false
+      referencedRelation: "public_catalog_products"
       referencedColumns: ["category_id"]
     }
                   ]
@@ -819,6 +885,12 @@ isOneToOne: false
       columns: ["listing_id"]
 isOneToOne: false
       referencedRelation: "public_catalog_listings"
+      referencedColumns: ["listing_id"]
+    },{
+      foreignKeyName: "seller_payouts_listing_id_fkey"
+      columns: ["listing_id"]
+isOneToOne: false
+      referencedRelation: "public_catalog_products"
       referencedColumns: ["listing_id"]
     },{
       foreignKeyName: "seller_payouts_order_item_id_fkey"
@@ -932,15 +1004,28 @@ isOneToOne: false
                 }
           }
           Views: {
-            "public_catalog_products": {
-                  Row: {
-                    "asking_price": number | null,"authentication_status": string | null,"brand_id": string | null,"brand_name": string | null,"brand_slug": string | null,"category_id": string | null,"category_name": string | null,"category_slug": string | null,"colorway": string | null,"condition": string | null,"conditions": string[] | null,"currency": string | null,"description": string | null,"featured": boolean | null,"image_path": string | null,"listing_id": string | null,"listing_options": Json | null,"model": string | null,"most_wanted": boolean | null,"ownership_type": Database["public"]['Enums']["listing_ownership_type"] | null,"product_id": string | null,"product_name": string | null,"published_at": string | null,"release_year": number | null,"search_text": string | null,"size": string | null,"size_system": string | null,"sizes": string[] | null,"sku": string | null,"slug": string | null,"style_code": string | null,"variant_id": string | null
-                  }
-                  Relationships: []
-                },
             "public_catalog_listings": {
                   Row: {
                     "asking_price": number | null,"authentication_status": string | null,"brand_id": string | null,"brand_name": string | null,"brand_slug": string | null,"category_id": string | null,"category_name": string | null,"category_slug": string | null,"colorway": string | null,"condition": string | null,"currency": string | null,"description": string | null,"featured": boolean | null,"image_path": string | null,"listing_id": string | null,"model": string | null,"most_wanted": boolean | null,"ownership_type": Database["public"]['Enums']["listing_ownership_type"] | null,"product_id": string | null,"product_name": string | null,"published_at": string | null,"release_year": number | null,"search_text": string | null,"size": string | null,"size_system": string | null,"sku": string | null,"slug": string | null,"style_code": string | null,"variant_id": string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "listings_product_id_fkey"
+      columns: ["product_id"]
+isOneToOne: false
+      referencedRelation: "products"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "listings_variant_id_fkey"
+      columns: ["variant_id"]
+isOneToOne: false
+      referencedRelation: "product_variants"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"public_catalog_products": {
+                  Row: {
+                    "asking_price": number | null,"authentication_status": string | null,"brand_id": string | null,"brand_name": string | null,"brand_slug": string | null,"category_id": string | null,"category_name": string | null,"category_slug": string | null,"colorway": string | null,"condition": string | null,"conditions": (string)[] | null,"currency": string | null,"description": string | null,"featured": boolean | null,"image_path": string | null,"listing_id": string | null,"listing_options": Json | null,"model": string | null,"most_wanted": boolean | null,"ownership_type": Database["public"]['Enums']["listing_ownership_type"] | null,"product_id": string | null,"product_name": string | null,"published_at": string | null,"release_year": number | null,"search_text": string | null,"size": string | null,"size_system": string | null,"sizes": (string)[] | null,"sku": string | null,"slug": string | null,"style_code": string | null,"variant_id": string | null
                   }
                   Relationships: [
                     {
@@ -1003,7 +1088,7 @@ isOneToOne: false
                            },
 "admin_product_publication_diagnostics":
 { Args: { "target_product_id": string }; Returns: {
-              "active_variant_count": number,"blocker_codes": string[],"blocker_messages": string[],"draft_listing_count": number,"live_listing_count": number,"media_count": number,"publicly_visible": boolean,"stage": string
+              "active_variant_count": number,"blocker_codes": (string)[],"blocker_messages": (string)[],"draft_listing_count": number,"live_listing_count": number,"media_count": number,"product_id": string,"publicly_visible": boolean,"stage": string
             }[]
                            },
 "admin_product_variants":
@@ -1104,7 +1189,7 @@ isOneToOne: false
 { Args: Record<PropertyKey, never>; Returns: Json
                            },
 "publish_store_listing":
-{ Args: { "decision_notes": string,"target_listing_id": string }; Returns: string
+{ Args: { "decision_notes"?: string,"target_listing_id": string }; Returns: string
                            },
 "record_media_removal":
 { Args: { "asset_bucket": string,"asset_path": string }; Returns: boolean

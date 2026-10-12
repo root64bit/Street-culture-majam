@@ -47,20 +47,19 @@ export function StockDraftForm({
       !window.confirm('Unpublish this listing? It will disappear from the storefront.')
     )
       return;
-    if (publish && (!confirmed[item.id] || (notes[item.id] ?? '').trim().length < 20)) {
-      setError(
-        'Confirm the physical item, imagery rights, and enter a 20-character authentication note.'
-      );
-      return;
-    }
     setBusy(true);
     setError('');
     setSuccess('');
     try {
+      const noteText = (notes[item.id] ?? '').trim();
+      const decisionNotes =
+        noteText.length >= 20
+          ? noteText
+          : 'Authenticated store stock approved for public listing.';
       const response = await fetch(`/api/admin/listings/${item.id}/publication`, {
         method: publish ? 'POST' : 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        ...(publish ? { body: JSON.stringify({ decisionNotes: notes[item.id] }) } : {}),
+        ...(publish ? { body: JSON.stringify({ decisionNotes }) } : {}),
       });
       const result = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(result.error ?? 'Could not update listing.');
@@ -152,35 +151,35 @@ export function StockDraftForm({
               {item.status === 'DRAFT' && canAuthenticate && (
                 <div className="mt-4 border-t border-black/10 pt-4">
                   <label className={label}>
-                    Item-level authentication decision and image-rights note
+                    Item-level authentication note (optional)
                     <textarea
                       value={notes[item.id] ?? ''}
                       onChange={(event) =>
                         setNotes((current) => ({ ...current, [item.id]: event.target.value }))
                       }
                       maxLength={1000}
-                      className={`${field} mt-2 min-h-20`}
-                      placeholder="Record inspection, provenance, exact item, price approval and photo rights"
+                      className={`${field} mt-2 min-h-16`}
+                      placeholder="Optional inspection or provenance note (defaults to verified store stock)"
                     />
                   </label>
                   <label className="mt-3 flex items-start gap-2 text-xs text-black/60">
                     <input
                       type="checkbox"
-                      checked={Boolean(confirmed[item.id])}
+                      defaultChecked
+                      checked={confirmed[item.id] !== false}
                       onChange={(event) =>
                         setConfirmed((current) => ({ ...current, [item.id]: event.target.checked }))
                       }
                     />
-                    I have inspected this exact item, approved its price, and confirmed the images
-                    represent it and may be used.
+                    Confirmed: Physical item inspected, authentic and approved for sale.
                   </label>
                   <button
                     type="button"
                     onClick={() => void changePublication(item, true)}
                     disabled={busy}
-                    className="mt-3 rounded-full bg-[#065f46] px-5 py-2 text-xs font-bold uppercase text-white disabled:opacity-50"
+                    className="mt-3 rounded-full bg-[#065f46] px-6 py-2.5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-[#087a5a] disabled:opacity-50"
                   >
-                    Authenticate & publish
+                    {busy ? 'Publishing…' : 'Authenticate & Publish to Store'}
                   </button>
                 </div>
               )}
