@@ -2,6 +2,7 @@ import ExcelJS from 'exceljs';
 import { capabilityApiClient } from '@/lib/admin/access';
 import { adminFailure } from '@/lib/admin/errors';
 import { productHeaders, variantHeaders, canonicalMediaHeaders } from '@/lib/admin/product-import';
+import { SUPPORTED_CURRENCIES } from '@/lib/currency';
 export const runtime = 'nodejs';
 export async function GET() {
   const access = await capabilityApiClient(['products.import']);
@@ -65,9 +66,16 @@ export async function GET() {
     ],
     [
       'Ownership / currency',
-      'STREET_CULTURE / MZN. Seller stock must use the consignment intake workflow.',
+      'Use MZN, USD, EUR, ZAR, or GBP. Foreign prices are converted to MZN during preview using one recorded daily rate. Review the MZN amount before confirming. Seller stock must use the consignment intake workflow.',
     ],
-    ['Variant quantity', 'Exactly 1 per physical item. Generated sizes are not inventory.'],
+    [
+      'Variant price override',
+      'price_override uses the same currency as its matching PRODUCTS row and is converted with the same rate.',
+    ],
+    [
+      'Variant quantity / status',
+      'Exactly 1 per physical item and active must be TRUE. Generated sizes are not inventory.',
+    ],
     [
       'MEDIA',
       'One row per photo. Use an existing public URL from this project’s product-images bucket; sort_order 0–99.',
@@ -102,7 +110,7 @@ export async function GET() {
   for (const brand of brands.data ?? []) values.addRow(['brand', brand.name]);
   for (const category of categories.data ?? []) values.addRow(['category', category.name]);
   for (const [field, list] of [
-    ['currency', ['MZN']],
+    ['currency', SUPPORTED_CURRENCIES],
     ['condition', ['NEW', 'LIKE_NEW', 'GOOD', 'FAIR']],
     ['ownership_type', ['STREET_CULTURE']],
     ['gender', ['MEN', 'WOMEN', 'UNISEX', 'KIDS']],

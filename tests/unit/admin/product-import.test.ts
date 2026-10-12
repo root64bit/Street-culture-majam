@@ -15,6 +15,9 @@ const context = {
   existingReferences: new Set<string>(),
   existingSkus: new Set<string>(),
   supabaseUrl: 'https://example.supabase.co',
+  currencyRates: { MZN: 1, USD: 1 / 64, EUR: 1 / 70, ZAR: 1 / 3.5, GBP: 1 / 82 },
+  exchangeRateUpdatedAt: '2026-10-12T00:00:00.000Z',
+  exchangeRateSource: 'https://www.exchangerate-api.com',
 };
 
 async function workbookBuffer(price = 12000, secondReference?: string) {
@@ -94,6 +97,68 @@ describe('product import staging validation', () => {
     expect(parsed.rows[0].status).toBe('INVALID');
     expect(parsed.rows[0].validation_errors).toEqual(
       expect.arrayContaining([expect.objectContaining({ field: 'selling_price' })])
+    );
+  });
+
+  it('converts foreign product and variant prices to canonical MZN', async () => {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(
+      (await workbookBuffer(100)) as unknown as Parameters<typeof workbook.xlsx.load>[0]
+    );
+    const products = workbook.getWorksheet('PRODUCTS')!;
+    products.getCell('L2').value = 125;
+    products.getCell('N2').value = 'USD';
+    workbook.getWorksheet('VARIANTS')!.getCell('G2').value = 110;
+
+    const parsed = await parseProductImport(
+      Buffer.from(await workbook.xlsx.writeBuffer()),
+      context
+    );
+
+    expect(parsed.rows[0].status).toBe('VALID');
+    expect(parsed.rows[0].normalized_data).toMatchObject({
+      currency: 'MZN',
+      sellingPrice: 6400,
+      retailPrice: 8000,
+      sourcePricing: {
+        currency: 'USD',
+        sellingPrice: 100,
+        sourceToMznRate: 64,
+      },
+      variants: [expect.objectContaining({ priceOverride: 7040 })],
+    });
+    expect(parsed.rows[0].validation_warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: 'currency',
+          error: expect.stringContaining('1 USD = 64.000000 MZN'),
+        }),
+      ])
+    );
+  });
+
+  it('blocks a foreign-currency row when a current rate is unavailable', async () => {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(
+      (await workbookBuffer(100)) as unknown as Parameters<typeof workbook.xlsx.load>[0]
+    );
+    workbook.getWorksheet('PRODUCTS')!.getCell('N2').value = 'USD';
+
+    const parsed = await parseProductImport(Buffer.from(await workbook.xlsx.writeBuffer()), {
+      ...context,
+      currencyRates: { MZN: 1 },
+      exchangeRateUpdatedAt: null,
+      exchangeRateSource: null,
+    });
+
+    expect(parsed.rows[0].status).toBe('INVALID');
+    expect(parsed.rows[0].validation_errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: 'currency',
+          error: expect.stringContaining('exchange rate is unavailable'),
+        }),
+      ])
     );
   });
 
@@ -184,4 +249,3 @@ describe('product import staging validation', () => {
     expect(result.rows[0].status).toBe('VALID');
   });
 });
-

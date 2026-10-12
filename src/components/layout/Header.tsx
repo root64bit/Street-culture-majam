@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { Heart, Menu, Search, ShoppingBag, User, X } from 'lucide-react';
 import { useCommerce } from '@/features/commerce/CommerceProvider';
 import { useDisplayCurrency } from '@/features/currency/CurrencyProvider';
+import { SUPPORTED_CURRENCIES, type SupportedCurrency } from '@/lib/currency';
 
 const navigation = [
   { label: 'NEW', href: '/#new' },
@@ -38,43 +39,101 @@ export function Header() {
 
         <nav className="hidden items-center gap-5 xl:flex" aria-label="Primary navigation">
           {navigation.map((item) => (
-            <Link key={item.label} href={item.href} className="text-[11px] font-bold tracking-[0.12em] text-black/65 transition hover:text-black">
+            <Link
+              key={item.label}
+              href={item.href}
+              className="text-[11px] font-bold tracking-[0.12em] text-black/65 transition hover:text-black"
+            >
               {item.label}
             </Link>
           ))}
         </nav>
 
         <div className="flex items-center gap-1 sm:gap-2">
-          <label className="sr-only" htmlFor="display-currency">Display currency</label>
-          <select id="display-currency" value={currency} onChange={(event) => chooseCurrency(event.target.value as 'MZN' | 'EUR' | 'ZAR')}
-            aria-label="Display currency" title={updatedAt ? `Estimated rates updated ${new Date(updatedAt).toLocaleDateString()}; checkout charges MZN` : 'Checkout charges MZN'}
-            className="max-w-[74px] rounded-lg border border-black/10 bg-transparent px-1 py-2 text-[10px] font-bold text-black sm:max-w-none">
-            <option value="MZN">MZN</option><option value="EUR" disabled={!rates.EUR}>EUR</option><option value="ZAR" disabled={!rates.ZAR}>ZAR</option>
+          <label className="sr-only" htmlFor="display-currency">
+            Display currency
+          </label>
+          <select
+            id="display-currency"
+            value={currency}
+            onChange={(event) => chooseCurrency(event.target.value as SupportedCurrency)}
+            aria-label="Display currency"
+            title={
+              updatedAt
+                ? `Estimated rates updated ${new Date(updatedAt).toLocaleDateString()}; checkout charges MZN`
+                : 'Checkout charges MZN'
+            }
+            className="max-w-[74px] rounded-lg border border-black/10 bg-transparent px-1 py-2 text-[10px] font-bold text-black sm:max-w-none"
+          >
+            {SUPPORTED_CURRENCIES.map((code) => (
+              <option key={code} value={code} disabled={!rates[code]}>
+                {code}
+              </option>
+            ))}
           </select>
           <Link href="/search" className="header-action" aria-label="Search">
             <Search className="h-4 w-4" />
             <span className="hidden text-[10px] font-bold tracking-[0.12em] lg:inline">SEARCH</span>
           </Link>
-          <Link href="/account" className="header-action hidden sm:flex" aria-label="Account"><User className="h-4 w-4" /></Link>
-          <Link href="/account/wishlist" className="header-action hidden sm:flex" aria-label="Wishlist"><Heart className="h-4 w-4" /></Link>
-          <button type="button" onClick={openCart} className="header-action relative" aria-label={`Bag with ${cartCount} items`}>
+          <Link href="/account" className="header-action hidden sm:flex" aria-label="Account">
+            <User className="h-4 w-4" />
+          </Link>
+          <Link
+            href="/account/wishlist"
+            className="header-action hidden sm:flex"
+            aria-label="Wishlist"
+          >
+            <Heart className="h-4 w-4" />
+          </Link>
+          <button
+            type="button"
+            onClick={openCart}
+            className="header-action relative"
+            aria-label={`Bag with ${cartCount} items`}
+          >
             <ShoppingBag className="h-4 w-4" />
             <span className="hidden text-[10px] font-bold tracking-[0.12em] lg:inline">BAG</span>
-            {cartCount > 0 && <span className="grid h-5 min-w-5 place-items-center rounded-full bg-acid px-1 text-[10px] font-black">{cartCount}</span>}
+            {cartCount > 0 && (
+              <span className="grid h-5 min-w-5 place-items-center rounded-full bg-acid px-1 text-[10px] font-black">
+                {cartCount}
+              </span>
+            )}
           </button>
-          <button type="button" onClick={() => setMenuOpen((value) => !value)} className="header-action xl:hidden" aria-expanded={menuOpen} aria-label="Toggle menu">
+          <button
+            type="button"
+            onClick={() => setMenuOpen((value) => !value)}
+            className="header-action xl:hidden"
+            aria-expanded={menuOpen}
+            aria-label="Toggle menu"
+          >
             {menuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
           </button>
         </div>
       </div>
 
       {menuOpen && (
-        <nav className="mx-auto mt-2 max-w-[1500px] rounded-2xl border border-white/35 bg-white/95 p-3 text-black shadow-xl backdrop-blur-2xl xl:hidden" aria-label="Mobile navigation">
+        <nav
+          className="mx-auto mt-2 max-w-[1500px] rounded-2xl border border-white/35 bg-white/95 p-3 text-black shadow-xl backdrop-blur-2xl xl:hidden"
+          aria-label="Mobile navigation"
+        >
           <div className="grid grid-cols-2 gap-1">
             {navigation.map((item) => (
-              <Link key={item.label} href={item.href} onClick={() => setMenuOpen(false)} className="rounded-xl px-4 py-3 text-xs font-bold tracking-[0.12em] hover:bg-black hover:text-white">{item.label}</Link>
+              <Link
+                key={item.label}
+                href={item.href}
+                onClick={() => setMenuOpen(false)}
+                className="rounded-xl px-4 py-3 text-xs font-bold tracking-[0.12em] hover:bg-black hover:text-white"
+              >
+                {item.label}
+              </Link>
             ))}
-            <Link href="/account" onClick={() => setMenuOpen(false)} className="rounded-xl px-4 py-3 text-xs font-bold tracking-[0.12em] hover:bg-black hover:text-white">ACCOUNT</Link>
+            <Link
+              href="/account"
+              onClick={() => setMenuOpen(false)}
+              className="rounded-xl px-4 py-3 text-xs font-bold tracking-[0.12em] hover:bg-black hover:text-white"
+            >
+              ACCOUNT
+            </Link>
           </div>
         </nav>
       )}

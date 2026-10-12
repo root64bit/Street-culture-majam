@@ -5,13 +5,21 @@ import { CommerceProvider } from '@/features/commerce/CommerceProvider';
 import { CurrencyProvider } from '@/features/currency/CurrencyProvider';
 
 function renderHeader() {
-  return render(<CurrencyProvider><CommerceProvider><Header /></CommerceProvider></CurrencyProvider>);
+  return render(
+    <CurrencyProvider>
+      <CommerceProvider>
+        <Header />
+      </CommerceProvider>
+    </CurrencyProvider>
+  );
 }
 
 describe('Header component', () => {
   it('renders the storefront brand', () => {
     renderHeader();
-    expect(screen.getByRole('img', { name: 'Street Culture — Authentic Only' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('img', { name: 'Street Culture — Authentic Only' })
+    ).toBeInTheDocument();
   });
 
   it('renders core navigation links', () => {
@@ -23,6 +31,8 @@ describe('Header component', () => {
     expect(screen.getByText('ACCESSORIES')).toBeInTheDocument();
     expect(screen.getByText('BRANDS')).toBeInTheDocument();
     expect(screen.getByText('SELL')).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'USD' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'GBP' })).toBeInTheDocument();
   });
 
   it('renders search, wishlist and an empty bag', () => {

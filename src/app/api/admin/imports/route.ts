@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { capabilityApiClient } from '@/lib/admin/access';
 import { parseProductImport } from '@/lib/admin/product-import';
+import { fetchMznExchangeRates } from '@/lib/currency';
 import type { Json } from '@/types/database.types';
 
 export const runtime = 'nodejs';
@@ -28,9 +29,10 @@ export async function POST(request: Request) {
   }
   const { supabase, user } = access;
   try {
-    const [brands, categories] = await Promise.all([
+    const [brands, categories, rateSnapshot] = await Promise.all([
       supabase.from('brands').select('id,name,active').limit(1000),
       supabase.from('categories').select('id,name,active').limit(1000),
+      fetchMznExchangeRates().catch(() => null),
     ]);
     if (brands.error || categories.error) throw new Error('Catalog lookup failed.');
     const existingReferences = new Set<string>();
@@ -66,6 +68,9 @@ export async function POST(request: Request) {
       existingReferences,
       existingSkus,
       supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
+      currencyRates: rateSnapshot?.rates ?? { MZN: 1 },
+      exchangeRateUpdatedAt: rateSnapshot?.updatedAt ?? null,
+      exchangeRateSource: rateSnapshot?.source ?? null,
     });
     const validCount = parsed.rows.filter((row) => row.status === 'VALID').length;
     const { data: previous } = await supabase

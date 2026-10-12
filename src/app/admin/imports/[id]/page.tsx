@@ -102,7 +102,8 @@ export default async function AdminImportDetailPage({
                 <th className="p-4">Row</th>
                 <th className="p-4">Reference</th>
                 <th className="p-4">Product</th>
-                <th className="p-4">Asking MZN</th>
+                <th className="p-4">Source price</th>
+                <th className="p-4">Checkout price</th>
                 <th className="p-4">Status</th>
                 <th className="p-4">Validation</th>
               </tr>
@@ -110,6 +111,10 @@ export default async function AdminImportDetailPage({
             <tbody>
               {(rows ?? []).map((row) => {
                 const raw = row.raw_data as Record<string, string>;
+                const normalized = row.normalized_data as {
+                  sellingPrice?: number;
+                  currency?: string;
+                };
                 const issues = [
                   ...(row.validation_errors as unknown as ImportIssue[]),
                   ...(row.validation_warnings as unknown as ImportIssue[]),
@@ -119,7 +124,14 @@ export default async function AdminImportDetailPage({
                     <td className="p-4">{row.row_number}</td>
                     <td className="p-4 font-mono text-xs">{raw.product_reference}</td>
                     <td className="p-4">{raw.product_name}</td>
-                    <td className="p-4">{raw.selling_price}</td>
+                    <td className="p-4">
+                      {raw.selling_price} {raw.currency}
+                    </td>
+                    <td className="p-4">
+                      {normalized.sellingPrice && normalized.currency === 'MZN'
+                        ? `${normalized.sellingPrice.toLocaleString()} MZN`
+                        : 'Unavailable'}
+                    </td>
                     <td className="p-4 font-bold">{row.status}</td>
                     <td className="p-4 text-xs">
                       {issues.length

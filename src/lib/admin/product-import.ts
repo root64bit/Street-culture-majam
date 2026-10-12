@@ -1,6 +1,13 @@
 import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 import { createHash } from 'node:crypto';
+import {
+  SUPPORTED_CURRENCIES,
+  convertToMzn,
+  sourceToMznRate,
+  type CurrencyRates,
+  type SupportedCurrency,
+} from '@/lib/currency';
 import { slugify } from '@/lib/schemas/admin-catalog.schema';
 
 export const productHeaders = [
@@ -69,6 +76,9 @@ export type ImportContext = {
   existingReferences: Set<string>;
   existingSkus: Set<string>;
   supabaseUrl: string;
+  currencyRates: CurrencyRates;
+  exchangeRateUpdatedAt: string | null;
+  exchangeRateSource: string | null;
 };
 
 function cellText(cell: ExcelJS.Cell): string {
@@ -171,10 +181,7 @@ export async function sanitizeWorkbookBuffer(buffer: Buffer): Promise<Buffer> {
       const file = zip.file(relsPath);
       if (!file) continue;
       const xml = await file.async('text');
-      const cleaned = xml.replace(
-        /<Relationship\b[^>]*?(?:comments|vmlDrawing)[^>]*?\/>/gi,
-        ''
-      );
+      const cleaned = xml.replace(/<Relationship\b[^>]*?(?:comments|vmlDrawing)[^>]*?\/>/gi, '');
       if (cleaned !== xml) {
         zip.file(relsPath, cleaned);
         modified = true;
@@ -209,7 +216,9 @@ export async function parseProductImport(buffer: Buffer, context: ImportContext)
   const workbook = new ExcelJS.Workbook();
   try {
     // ExcelJS's bundled Buffer type predates the resizable-ArrayBuffer Node types.
-    await workbook.xlsx.load(sanitizedBuffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
+    await workbook.xlsx.load(
+      sanitizedBuffer as unknown as Parameters<typeof workbook.xlsx.load>[0]
+    );
   } catch {
     throw new Error(
       'Could not parse Excel workbook. Ensure the file is not corrupted or password-protected.'
@@ -248,16 +257,39 @@ export async function parseProductImport(buffer: Buffer, context: ImportContext)
     if (!brand) add('brand', 'Unknown or ambiguous brand. Create or map it in admin first.');
     if (!category)
       add('category', 'Unknown or ambiguous category. Create or map it in admin first.');
-    const price = money(data.selling_price, true);
-    const retailPrice = money(data.retail_price, false);
-    if (price === null)
+    const sourcePrice = money(data.selling_price, true);
+    const sourceRetailPrice = money(data.retail_price, false);
+    if (sourcePrice === null)
       add('selling_price', 'Enter a positive amount with at most two decimal places.');
-    if (retailPrice === null)
+    if (sourceRetailPrice === null)
       add('retail_price', 'Enter a positive amount with at most two decimal places.');
-    const currency = enumValue(data.currency, ['MZN', 'EUR', 'ZAR', 'USD', 'GBP']);
+    const currency = enumValue(data.currency, SUPPORTED_CURRENCIES) as SupportedCurrency | null;
     if (!currency) add('currency', 'Unsupported currency.', 'MZN');
-    else if (currency !== 'MZN')
-      add('currency', 'M-Pesa catalog import currently requires MZN.', 'MZN');
+    const conversionRate = currency ? sourceToMznRate(currency, context.currencyRates) : null;
+    if (currency && !conversionRate)
+      add(
+        'currency',
+        'A current MZN exchange rate is unavailable. Retry later or upload MZN prices.',
+        'MZN'
+      );
+    const price =
+      typeof sourcePrice === 'number' && currency && conversionRate
+        ? convertToMzn(sourcePrice, currency, context.currencyRates)
+        : sourcePrice;
+    const retailPrice =
+      typeof sourceRetailPrice === 'number' && currency && conversionRate
+        ? convertToMzn(sourceRetailPrice, currency, context.currencyRates)
+        : sourceRetailPrice;
+    if (typeof sourcePrice === 'number' && conversionRate && price === null)
+      add('selling_price', 'Converted MZN amount exceeds the supported price range.');
+    if (typeof sourceRetailPrice === 'number' && conversionRate && retailPrice === null)
+      add('retail_price', 'Converted MZN amount exceeds the supported price range.');
+    if (currency && currency !== 'MZN' && conversionRate)
+      warnings.push({
+        field: 'currency',
+        value: currency,
+        error: `Converted to MZN at 1 ${currency} = ${conversionRate.toFixed(6)} MZN${context.exchangeRateUpdatedAt ? ` using the rate dated ${context.exchangeRateUpdatedAt.slice(0, 10)}` : ''}. Review the MZN amount before confirming the import.`,
+      });
     const condition = enumValue(data.condition, ['NEW', 'LIKE_NEW', 'GOOD', 'FAIR']);
     if (!condition) add('condition', 'Unsupported condition.', 'NEW');
     const ownershipType = enumValue(data.ownership_type, [
@@ -306,7 +338,11 @@ export async function parseProductImport(buffer: Buffer, context: ImportContext)
         const variant = item.data;
         const sizeSystem = enumValue(variant.size_system, ['US', 'UK', 'EU', 'CM', 'STANDARD']);
         const quantity = Number(variant.quantity);
-        const priceOverride = money(variant.price_override, false);
+        const sourcePriceOverride = money(variant.price_override, false);
+        const priceOverride =
+          typeof sourcePriceOverride === 'number' && currency && conversionRate
+            ? convertToMzn(sourcePriceOverride, currency, context.currencyRates)
+            : sourcePriceOverride;
         if (!variant.size || variant.size.length > 24)
           add('product_reference', `VARIANTS row ${item.rowNumber}: size must be 1–24 characters.`);
         if (!sizeSystem)
@@ -320,8 +356,17 @@ export async function parseProductImport(buffer: Buffer, context: ImportContext)
         if (sizeKeys.has(sizeKey))
           add('product_reference', `VARIANTS row ${item.rowNumber}: duplicate size/color variant.`);
         sizeKeys.add(sizeKey);
-        if (priceOverride === null)
+        if (sourcePriceOverride === null)
           add('product_reference', `VARIANTS row ${item.rowNumber}: invalid price override.`);
+        else if (
+          typeof sourcePriceOverride === 'number' &&
+          conversionRate &&
+          priceOverride === null
+        )
+          add(
+            'product_reference',
+            `VARIANTS row ${item.rowNumber}: converted MZN price override is out of range.`
+          );
         if (variant.sku.length > 100)
           add('product_reference', `VARIANTS row ${item.rowNumber}: SKU too long.`);
         if (variant.sku) {
@@ -415,12 +460,22 @@ export async function parseProductImport(buffer: Buffer, context: ImportContext)
         releaseYear,
         retailPrice,
         sellingPrice: price,
-        currency,
+        currency: currency && conversionRate ? 'MZN' : null,
         condition,
         ownershipType,
         featured: booleanValue(data.featured, false),
         mostWanted: booleanValue(data.most_wanted, false),
         variants: normalizedVariants,
+        sourcePricing: currency
+          ? {
+              currency,
+              sellingPrice: sourcePrice,
+              retailPrice: sourceRetailPrice,
+              sourceToMznRate: conversionRate,
+              rateUpdatedAt: context.exchangeRateUpdatedAt,
+              rateSource: context.exchangeRateSource,
+            }
+          : null,
         mediaPaths,
         mediaDetails: longMedia
           ? linkedMedia.map((item) => ({
