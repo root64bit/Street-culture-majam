@@ -31,16 +31,16 @@ export function ImportUpload() {
 
   return (
     <form onSubmit={upload} className="rounded-3xl border border-black/10 bg-white p-6 sm:p-8">
-      <h2 className="text-xl font-black">Upload Excel</h2>
+      <h2 className="text-xl font-black">Upload Spreadsheet</h2>
       <p className="mt-2 text-sm text-black/55">
-        Validate up to 500 products. Uploading does not create catalog items.
+        Validate up to 500 products via Excel (.xlsx) or CSV (.csv). Uploading stages data for inspection and does not alter live products.
       </p>
       <input
         type="file"
         required
-        accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        accept=".xlsx,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,text/plain"
         onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-        aria-label="Excel workbook"
+        aria-label="Spreadsheet workbook or CSV file"
         className="mt-5 block w-full text-sm file:mr-4 file:rounded-full file:border-0 file:bg-black file:px-5 file:py-3 file:text-white"
       />
       {error && (

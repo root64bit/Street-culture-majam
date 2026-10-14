@@ -15,17 +15,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Workbook must be under 5 MB.' }, { status: 413 });
   const form = await request.formData().catch(() => null);
   const file = form?.get('file');
+  const fileName = file instanceof File ? file.name.toLowerCase() : '';
+  const isXlsx = fileName.endsWith('.xlsx');
+  const isCsv = fileName.endsWith('.csv') || fileName.endsWith('.txt');
+  const allowedTypes = [
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-excel',
+    'text/csv',
+    'text/plain',
+    'application/octet-stream',
+    '',
+  ];
+
   if (
     !(file instanceof File) ||
-    !file.name.toLowerCase().endsWith('.xlsx') ||
-    ![
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'application/octet-stream',
-      '',
-    ].includes(file.type) ||
+    (!isXlsx && !isCsv) ||
+    !allowedTypes.includes(file.type) ||
     file.size > 5 * 1024 * 1024
   ) {
-    return NextResponse.json({ error: 'Upload an .xlsx workbook under 5 MB.' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Upload an .xlsx or .csv file under 5 MB.' },
+      { status: 400 }
+    );
   }
   const { supabase, user } = access;
   try {
