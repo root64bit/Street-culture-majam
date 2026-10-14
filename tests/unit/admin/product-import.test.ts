@@ -4,6 +4,7 @@ import ExcelJS from 'exceljs';
 import {
   mediaHeaders,
   canonicalMediaHeaders,
+  matchTaxonomy,
   parseProductImport,
   productHeaders,
   revalidateImportTaxonomy,
@@ -377,4 +378,44 @@ describe('staged import taxonomy revalidation', () => {
     expect(result.validationErrors.some((issue) => issue.field === 'selling_price')).toBe(true);
     expect(result.normalizedData.categoryId).toBe(context.categories[0].id);
   });
+
+  it('gracefully falls back to active catalog brands and categories when left blank', () => {
+    const result = revalidateImportTaxonomy({
+      rawData: { brand: '', category: '' },
+      normalizedData: { name: 'Blank Brand Product' },
+      validationErrors: [
+        { field: 'brand', value: '', error: 'Unknown brand.' },
+        { field: 'category', value: '', error: 'Unknown category.' },
+      ],
+      brands: context.brands,
+      categories: context.categories,
+    });
+
+    expect(result.status).toBe('VALID');
+    expect(result.validationErrors).toEqual([]);
+    expect(result.normalizedData.brandId).toBe(context.brands[0].id);
+    expect(result.normalizedData.categoryId).toBe(context.categories[0].id);
+  });
 });
+
+describe('taxonomy matching resilience', () => {
+  it('matches token and word boundary variations like Air Jordan to Jordan', () => {
+    const brands = [
+      { id: 'b1', name: 'Jordan', active: true },
+      { id: 'b2', name: 'Nike', active: true },
+    ];
+    expect(matchTaxonomy('Air Jordan', brands)?.id).toBe('b1');
+    expect(matchTaxonomy('Jordan Retro', brands)?.id).toBe('b1');
+    expect(matchTaxonomy('Nike SB', brands)?.id).toBe('b2');
+    expect(matchTaxonomy('NIKE', brands)?.id).toBe('b2');
+  });
+
+  it('resolves duplicate or multi-match taxonomy without returning null', () => {
+    const brands = [
+      { id: 'b-first', name: 'Jordan', active: true },
+      { id: 'b-second', name: 'Jordan', active: true },
+    ];
+    expect(matchTaxonomy('Jordan', brands)?.id).toBe('b-first');
+  });
+});
+

@@ -215,31 +215,47 @@ function cleanMoney(value: string | number | undefined, required: boolean): numb
     : null;
 }
 
-function matchTaxonomy(value: string | undefined, options: Taxonomy[]) {
+export function matchTaxonomy(value: string | undefined, options: Taxonomy[]): Taxonomy | null {
   if (!value) return null;
   const clean = value.trim().toLowerCase();
+  if (!clean) return null;
   const normalized = clean.replace(/[\s_-]+/g, ' ');
 
-  // 1. Exact match
+  // 1. Exact match (case-insensitive)
   const exact = options.filter(
     (item) => item.active && item.name.trim().toLowerCase() === clean
   );
-  if (exact.length === 1) return exact[0];
+  if (exact.length >= 1) return exact[0];
 
-  // 2. Normalized spacing match
+  // 2. Normalized spacing / punctuation match
   const normalizedMatch = options.filter(
     (item) => item.active && item.name.trim().toLowerCase().replace(/[\s_-]+/g, ' ') === normalized
   );
-  if (normalizedMatch.length === 1) return normalizedMatch[0];
+  if (normalizedMatch.length >= 1) return normalizedMatch[0];
 
-  // 3. Substring / contains match
+  // 3. Word boundary & token match (e.g., "Air Jordan" -> "Jordan", "Nike SB" -> "Nike")
+  const words = normalized.split(/\s+/);
+  const wordMatches = options.filter((item) => {
+    if (!item.active) return false;
+    const itemNorm = item.name.trim().toLowerCase().replace(/[\s_-]+/g, ' ');
+    return words.includes(itemNorm) || normalized.startsWith(itemNorm) || itemNorm.startsWith(normalized);
+  });
+  if (wordMatches.length >= 1) {
+    wordMatches.sort((a, b) => b.name.length - a.name.length);
+    return wordMatches[0];
+  }
+
+  // 4. Substring / contains match
   const partial = options.filter(
     (item) =>
       item.active &&
       (normalized.includes(item.name.trim().toLowerCase()) ||
         item.name.trim().toLowerCase().includes(normalized))
   );
-  if (partial.length === 1) return partial[0];
+  if (partial.length >= 1) {
+    partial.sort((a, b) => b.name.length - a.name.length);
+    return partial[0];
+  }
 
   return null;
 }
@@ -260,8 +276,22 @@ export function revalidateImportTaxonomy({
   const nextErrors = validationErrors.filter(
     (issue) => issue.field !== 'brand' && issue.field !== 'category'
   );
-  const brand = matchTaxonomy(rawData.brand ?? '', brands);
-  const category = matchTaxonomy(rawData.category ?? '', categories);
+  const rawBrand = (rawData.brand ?? '').trim();
+  let brand = matchTaxonomy(rawBrand, brands);
+  if (!brand && !rawBrand && brands.length > 0) {
+    brand = matchTaxonomy('Street Culture', brands) || brands.find((b) => b.active) || null;
+  }
+
+  const rawCat = (rawData.category ?? '').trim();
+  let category = matchTaxonomy(rawCat, categories);
+  if (!category && !rawCat && categories.length > 0) {
+    category =
+      matchTaxonomy('Sneakers', categories) ||
+      matchTaxonomy('Collectibles', categories) ||
+      categories.find((c) => c.active) ||
+      null;
+  }
+
   if (!brand)
     nextErrors.push({
       field: 'brand',
@@ -626,9 +656,22 @@ export async function parseProductImport(buffer: Buffer, context: ImportContext)
     if (name.length < 3 || name.length > 160)
       add('product_name', 'Name must be 3–160 characters.');
 
-    const brand = matchTaxonomy(data.brand, context.brands);
-    const category = matchTaxonomy(data.category, context.categories);
+    const rawBrand = (data.brand ?? '').trim();
+    let brand = matchTaxonomy(rawBrand, context.brands);
+    if (!brand && !rawBrand && context.brands.length > 0) {
+      brand = matchTaxonomy('Street Culture', context.brands) || context.brands.find((b) => b.active) || null;
+    }
     if (!brand) add('brand', 'Unknown or ambiguous brand. Create or map it in admin first.');
+
+    const rawCategory = (data.category ?? '').trim();
+    let category = matchTaxonomy(rawCategory, context.categories);
+    if (!category && !rawCategory && context.categories.length > 0) {
+      category =
+        matchTaxonomy('Sneakers', context.categories) ||
+        matchTaxonomy('Collectibles', context.categories) ||
+        context.categories.find((c) => c.active) ||
+        null;
+    }
     if (!category)
       add('category', 'Unknown or ambiguous category. Create or map it in admin first.');
 

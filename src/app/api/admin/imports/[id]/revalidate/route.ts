@@ -5,6 +5,7 @@ import {
   type ImportIssue,
   type Taxonomy,
 } from '@/lib/admin/product-import';
+import { ensureTaxonomiesExist } from '@/lib/admin/taxonomy-sync';
 import type { Json } from '@/types/database.types';
 
 export const runtime = 'nodejs';
@@ -15,21 +16,19 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
     return NextResponse.json({ error: access.error }, { status: access.status });
   const { id } = await params;
   const { supabase } = access;
-  const [{ data: batch, error: batchError }, brands, categories, rows] = await Promise.all([
+  const [{ data: batch, error: batchError }, rows] = await Promise.all([
     supabase
       .from('product_import_batches')
       .select('id,status,mode,total_rows,imported_rows,failed_rows')
       .eq('id', id)
       .maybeSingle(),
-    supabase.from('brands').select('id,name,active').limit(1000),
-    supabase.from('categories').select('id,name,active').limit(1000),
     supabase
       .from('product_import_rows')
       .select('id,raw_data,normalized_data,validation_errors,status')
       .eq('batch_id', id)
       .in('status', ['VALID', 'INVALID'])
       .order('row_number')
-      .limit(500),
+      .limit(2000),
   ]);
   if (batchError || !batch)
     return NextResponse.json({ error: 'Import batch not found.' }, { status: 404 });
@@ -43,13 +42,26 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
       { error: 'This batch cannot be revalidated after importing has started.' },
       { status: 409 }
     );
-  if (brands.error || categories.error || rows.error)
+  if (rows.error)
     return NextResponse.json({ error: 'Catalog lookup failed.' }, { status: 503 });
   if ((rows.data?.length ?? 0) !== batch.total_rows)
     return NextResponse.json(
       { error: 'The staged batch is incomplete and cannot be revalidated.' },
       { status: 409 }
     );
+
+  const brandCandidates = (rows.data ?? []).map(
+    (r) => (r.raw_data as Record<string, string>)?.brand
+  );
+  const categoryCandidates = (rows.data ?? []).map(
+    (r) => (r.raw_data as Record<string, string>)?.category
+  );
+
+  const { brands, categories } = await ensureTaxonomiesExist(
+    supabase,
+    brandCandidates,
+    categoryCandidates
+  );
 
   const revalidated = (rows.data ?? []).map((row) => ({
     id: row.id,
@@ -59,8 +71,8 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
       validationErrors: Array.isArray(row.validation_errors)
         ? (row.validation_errors as unknown as ImportIssue[])
         : [],
-      brands: (brands.data ?? []) as Taxonomy[],
-      categories: (categories.data ?? []) as Taxonomy[],
+      brands: brands as Taxonomy[],
+      categories: categories as Taxonomy[],
     }),
   }));
 

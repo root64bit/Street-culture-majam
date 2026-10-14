@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { capabilityApiClient } from '@/lib/admin/access';
 import { parseProductImport } from '@/lib/admin/product-import';
+import { ensureTaxonomiesExist } from '@/lib/admin/taxonomy-sync';
 import { fetchMznExchangeRates } from '@/lib/currency';
 import type { Json } from '@/types/database.types';
 
@@ -40,12 +41,27 @@ export async function POST(request: Request) {
   }
   const { supabase, user } = access;
   try {
-    const [brands, categories, rateSnapshot] = await Promise.all([
-      supabase.from('brands').select('id,name,active').limit(1000),
-      supabase.from('categories').select('id,name,active').limit(1000),
+    const fileBuffer = Buffer.from(await file.arrayBuffer());
+    const brandCandidates: string[] = [];
+    const categoryCandidates: string[] = [];
+    if (isCsv) {
+      const text = fileBuffer.toString('utf8');
+      const lines = text.split(/\r?\n/).slice(0, 100);
+      for (const line of lines) {
+        const parts = line.split(',');
+        if (parts.length >= 4) {
+          const b = parts[2]?.trim().replace(/^['"]|['"]$/g, '');
+          const c = parts[3]?.trim().replace(/^['"]|['"]$/g, '');
+          if (b && b.length >= 2) brandCandidates.push(b);
+          if (c && c.length >= 2) categoryCandidates.push(c);
+        }
+      }
+    }
+
+    const [taxonomies, rateSnapshot] = await Promise.all([
+      ensureTaxonomiesExist(supabase, brandCandidates, categoryCandidates),
       fetchMznExchangeRates().catch(() => null),
     ]);
-    if (brands.error || categories.error) throw new Error('Catalog lookup failed.');
     const existingReferences = new Set<string>();
     const existingSkus = new Set<string>();
     // PostgREST caps each response; inspect every page so older catalog entries
@@ -73,9 +89,9 @@ export async function POST(request: Request) {
       for (const item of data ?? []) if (item.sku) existingSkus.add(item.sku.toUpperCase());
       if ((data?.length ?? 0) < 1000) break;
     }
-    const parsed = await parseProductImport(Buffer.from(await file.arrayBuffer()), {
-      brands: brands.data ?? [],
-      categories: categories.data ?? [],
+    const parsed = await parseProductImport(fileBuffer, {
+      brands: taxonomies.brands,
+      categories: taxonomies.categories,
       existingReferences,
       existingSkus,
       supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
