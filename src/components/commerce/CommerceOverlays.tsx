@@ -23,6 +23,11 @@ import { cn } from '@/lib/utils';
 import { useCommerce, type CartLine } from '@/features/commerce/CommerceProvider';
 import { shippingCountries } from '@/lib/shipping/countries';
 import { MPESA_MAX_TRANSACTION_MZN, splitMpesaAmount } from '@/lib/payments/mpesa-installments';
+import { formatSquareAmount } from '@/lib/payments/square-money';
+import {
+  SquarePaymentForm,
+  type SquareCheckoutQuote,
+} from '@/components/payments/SquarePaymentForm';
 
 function DialogShell({
   open,
@@ -490,7 +495,7 @@ function mozambiqueLocalPhone(value: string) {
 function CheckoutSheet() {
   const { cart, subtotal, checkoutOpen, closeCheckout, clearCart } = useCommerce();
   const [step, setStep] = useState<CheckoutStep>('contact');
-  const [paymentMethod, setPaymentMethod] = useState<'mpesa' | 'card'>('mpesa');
+  const [paymentMethod, setPaymentMethod] = useState<'mpesa' | 'card' | 'applePay'>('mpesa');
   const [paymentState, setPaymentState] = useState<PaymentState>('idle');
   const [error, setError] = useState('');
   const [phone, setPhone] = useState('');
@@ -516,6 +521,9 @@ function CheckoutSheet() {
   const [orderId, setOrderId] = useState('');
   const [confirmedTotal, setConfirmedTotal] = useState<number | null>(null);
   const [paymentProgress, setPaymentProgress] = useState<PaymentProgress | null>(null);
+  const [squareQuote, setSquareQuote] = useState<SquareCheckoutQuote | null>(null);
+  const [preparingSquare, setPreparingSquare] = useState(false);
+  const [checkingSquare, setCheckingSquare] = useState(false);
   const squareEnabled = process.env.NEXT_PUBLIC_SQUARE_PAYMENTS_ENABLED === 'true';
   const mpesaEnabled = process.env.NEXT_PUBLIC_MPESA_PAYMENTS_ENABLED === 'true';
   const selectedShipping = shippingMethods.find((method) => method.code === shippingMethodCode);
@@ -654,8 +662,10 @@ function CheckoutSheet() {
       setError('Choose an available Internet Express delivery service.');
       return;
     }
-    if (step === 'payment') setStep('review');
-    else if (step === 'contact') setStep('delivery');
+    if (step === 'payment') {
+      setStep('review');
+      if (paymentMethod !== 'mpesa') void prepareSquare();
+    } else if (step === 'contact') setStep('delivery');
     else if (step === 'delivery') setStep('payment');
   };
 
@@ -663,6 +673,158 @@ function CheckoutSheet() {
     if (step === 'review') setStep('payment');
     else if (step === 'payment') setStep('delivery');
     else if (step === 'delivery') setStep('contact');
+  };
+
+  const createOrReuseOrder = async () => {
+    if (orderId) return orderId;
+    if (!selectedShipping) throw new Error('Choose an available delivery service before paying.');
+    if (!cart.length || cart.some((line) => !line.listingId || line.quantity !== 1)) {
+      throw new Error('Each item must be a live listing with quantity one.');
+    }
+    let activeOrderId = orderId;
+    if (!activeOrderId) {
+      const attemptId = checkoutAttemptId || globalThis.crypto.randomUUID();
+      const secret = checkoutSecret || globalThis.crypto.randomUUID();
+      setCheckoutAttemptId(attemptId);
+      setCheckoutSecret(secret);
+      const orderResponse = await fetch('/api/checkout/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          checkout_id: attemptId,
+          checkout_secret: secret,
+          name,
+          email,
+          phone,
+          address_line_1: address,
+          address_line_2: addressLine2,
+          postal_code: postalCode,
+          delivery_notes: deliveryNotes,
+          city,
+          province,
+          country,
+          shipping_method_code: selectedShipping!.code,
+          items: cart.map((line) => ({
+            listingId: line.listingId,
+            size: line.size,
+            quantity: line.quantity,
+            displayedPrice: line.product.price,
+          })),
+        }),
+      });
+      const orderResult = await orderResponse.json().catch(() => null);
+      if (!orderResponse.ok) throw new Error(orderResult?.error || 'Could not reserve this order.');
+      activeOrderId = orderResult.orderId;
+      setOrderId(activeOrderId);
+      setOrderNumber(orderResult.orderNumber);
+      setConfirmedTotal(Number(orderResult.total));
+    }
+    return activeOrderId;
+  };
+
+  const prepareSquare = async () => {
+    if (preparingSquare) return;
+    setPreparingSquare(true);
+    setError('');
+    try {
+      if (!squareEnabled) throw new Error('Card and Apple Pay payments are currently unavailable.');
+      const activeOrderId = await createOrReuseOrder();
+      const response = await fetch('/api/payments/square/quote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_id: activeOrderId }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Could not prepare secure payment.');
+      setSquareQuote(result);
+      setPaymentState('idle');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not prepare secure payment.');
+    } finally {
+      setPreparingSquare(false);
+    }
+  };
+
+  const handleSquareResult = (result: {
+    status?: string;
+    fulfillable?: boolean;
+    orderNumber?: string;
+  }) => {
+    if (result.status === 'PAID') {
+      setOrderNumber(result.orderNumber || orderNumber);
+      setPaymentState(result.fulfillable ? 'paid' : 'paidNeedsHelp');
+      setError('');
+      setStep('confirmation');
+      return true;
+    }
+    if (result.status === 'FAILED') {
+      setSquareQuote(null);
+      setPaymentState('failed');
+      setError('The payment was declined. You can try another card or Apple Pay.');
+      return true;
+    }
+    if (result.status === 'PENDING') {
+      setPaymentState('idle');
+      setError('The payment was not submitted. You can try again.');
+      return true;
+    }
+    return false;
+  };
+
+  const checkSquare = async (quote = squareQuote) => {
+    if (!quote || checkingSquare) return;
+    setCheckingSquare(true);
+    setPaymentState('processing');
+    try {
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        const response = await fetch('/api/payments/square/status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ order_id: quote.orderId, payment_id: quote.paymentId }),
+          cache: 'no-store',
+        });
+        const result = await response.json();
+        if (response.ok && handleSquareResult(result)) return;
+        if (!response.ok) throw new Error(result.error || 'Payment status is unavailable.');
+        if (attempt < 5) await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+      setPaymentState('timedOut');
+      setError('Payment confirmation is taking longer. Check its status before paying again.');
+    } catch {
+      setPaymentState('timedOut');
+      setError('We could not confirm the payment yet. Check its status before paying again.');
+    } finally {
+      setCheckingSquare(false);
+    }
+  };
+
+  const submitSquare = async (token: string) => {
+    if (!squareQuote) return;
+    setPaymentState('processing');
+    setError('');
+    try {
+      const response = await fetch('/api/payments/square', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          order_id: squareQuote.orderId,
+          payment_id: squareQuote.paymentId,
+          source_id: token,
+        }),
+      });
+      const result = await response.json();
+      if (response.ok && handleSquareResult(result)) return;
+      if (response.status === 402) {
+        setPaymentState('failed');
+        setSquareQuote(null);
+        setError(result.error || 'The payment was declined. Please try another card.');
+        return;
+      }
+      await checkSquare(squareQuote);
+    } catch {
+      setPaymentState('timedOut');
+      setError('The payment result is not confirmed. Check its status before paying again.');
+    }
   };
 
   const pay = async () => {
@@ -698,45 +860,7 @@ function CheckoutSheet() {
 
     setPaymentState('processing');
     try {
-      let activeOrderId = orderId;
-      if (!activeOrderId) {
-        const attemptId = checkoutAttemptId || globalThis.crypto.randomUUID();
-        const secret = checkoutSecret || globalThis.crypto.randomUUID();
-        setCheckoutAttemptId(attemptId);
-        setCheckoutSecret(secret);
-        const orderResponse = await fetch('/api/checkout/orders', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            checkout_id: attemptId,
-            checkout_secret: secret,
-            name,
-            email,
-            phone: localMpesaPhone,
-            address_line_1: address,
-            address_line_2: addressLine2,
-            postal_code: postalCode,
-            delivery_notes: deliveryNotes,
-            city,
-            province,
-            country: 'MZ',
-            shipping_method_code: selectedShipping.code,
-            items: cart.map((line) => ({
-              listingId: line.listingId,
-              size: line.size,
-              quantity: line.quantity,
-              displayedPrice: line.product.price,
-            })),
-          }),
-        });
-        const orderResult = await orderResponse.json().catch(() => null);
-        if (!orderResponse.ok)
-          throw new Error(orderResult?.error || 'Could not reserve this order.');
-        activeOrderId = orderResult.orderId;
-        setOrderId(activeOrderId);
-        setOrderNumber(orderResult.orderNumber);
-        setConfirmedTotal(Number(orderResult.total));
-      }
+      const activeOrderId = await createOrReuseOrder();
 
       const initiateResponse = await fetch('/api/payments/mpesa/initiate', {
         method: 'POST',
@@ -847,6 +971,7 @@ function CheckoutSheet() {
       setOrderNumber('');
       setConfirmedTotal(null);
       setPaymentProgress(null);
+      setSquareQuote(null);
       setPaymentState('idle');
       setStep('contact');
     }
@@ -1058,13 +1183,22 @@ function CheckoutSheet() {
                 />
               )}
               {squareEnabled && (
-                <PaymentOption
-                  selected={paymentMethod === 'card'}
-                  onClick={() => setPaymentMethod('card')}
-                  icon={<LockKeyhole className="h-5 w-5" />}
-                  title="Card"
-                  detail="Secure international card payment"
-                />
+                <>
+                  <PaymentOption
+                    selected={paymentMethod === 'card'}
+                    onClick={() => setPaymentMethod('card')}
+                    icon={<LockKeyhole className="h-5 w-5" />}
+                    title="Card"
+                    detail="Visa, Mastercard and more · Secured by Square"
+                  />
+                  <PaymentOption
+                    selected={paymentMethod === 'applePay'}
+                    onClick={() => setPaymentMethod('applePay')}
+                    icon={<LockKeyhole className="h-5 w-5" />}
+                    title="Apple Pay"
+                    detail="Pay with your Apple wallet on supported devices"
+                  />
+                </>
               )}
             </div>
             {country === 'MZ' && paymentMethod === 'mpesa' && (
@@ -1092,9 +1226,7 @@ function CheckoutSheet() {
             )}
             {!squareEnabled && (
               <p className="mt-5 rounded-xl border border-black/10 bg-white p-3 text-xs leading-5 text-black/55">
-                {country === 'MZ'
-                  ? 'Card payment is awaiting PayFast merchant verification.'
-                  : 'International card payment is awaiting PayFast merchant verification. You can review the delivered total, but no charge will be made.'}
+                Card and Apple Pay are temporarily unavailable.
               </p>
             )}
           </div>
@@ -1175,7 +1307,7 @@ function CheckoutSheet() {
                 </div>
               </div>
             )}
-            {['waiting', 'processing'].includes(paymentState) && (
+            {paymentMethod === 'mpesa' && ['waiting', 'processing'].includes(paymentState) && (
               <div
                 className="mt-6 rounded-2xl border border-acid bg-acid/20 p-5 text-center"
                 role="status"
@@ -1227,7 +1359,7 @@ function CheckoutSheet() {
             {paymentState === 'timedOut' && (
               <p className="mt-6 rounded-2xl bg-amber-50 p-5 text-sm text-amber-900" role="status">
                 Confirmation is taking longer than expected. You can check again without sending
-                another request to your phone.
+                another payment request.
               </p>
             )}
           </div>
@@ -1269,11 +1401,21 @@ function CheckoutSheet() {
               ))}
               <div className="flex justify-between">
                 <span className="text-black/50">Amount paid</span>
-                <strong>{formatPrice(confirmedTotal ?? total, 'MZN')}</strong>
+                <strong>
+                  {paymentMethod !== 'mpesa' && squareQuote
+                    ? formatSquareAmount(squareQuote.amount)
+                    : formatPrice(confirmedTotal ?? total, 'MZN')}
+                </strong>
               </div>
               <div className="mt-3 flex justify-between">
                 <span className="text-black/50">Payment</span>
-                <strong>{paymentMethod === 'mpesa' ? 'M-Pesa' : 'Card'}</strong>
+                <strong>
+                  {paymentMethod === 'mpesa'
+                    ? 'M-Pesa'
+                    : paymentMethod === 'applePay'
+                      ? 'Apple Pay'
+                      : 'Card'}
+                </strong>
               </div>
               <div className="mt-3 flex justify-between gap-4">
                 <span className="text-black/50">Delivery</span>
@@ -1333,7 +1475,60 @@ function CheckoutSheet() {
             </button>
           </div>
         )}
-        {step === 'review' && (
+        {step === 'review' && paymentMethod !== 'mpesa' && (
+          <>
+            {preparingSquare && (
+              <p className="mt-6 flex items-center gap-2 text-sm" role="status">
+                <LoaderCircle className="h-4 w-4 animate-spin" /> Preparing secure checkout…
+              </p>
+            )}
+            {squareQuote && ['idle', 'failed'].includes(paymentState) && !preparingSquare && (
+              <>
+                <SquarePaymentForm
+                  method={paymentMethod}
+                  quote={squareQuote}
+                  contact={{ name, email, phone, country }}
+                  onToken={submitSquare}
+                  onUseCard={() => setPaymentMethod('card')}
+                />
+                {paymentMethod === 'card' && (
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('applePay')}
+                    className="mt-4 w-full text-xs font-semibold underline"
+                  >
+                    Use Apple Pay instead
+                  </button>
+                )}
+              </>
+            )}
+            {!squareQuote && !preparingSquare && (
+              <button
+                type="button"
+                onClick={() => void prepareSquare()}
+                className="h-13 mt-5 w-full rounded-full bg-black text-sm font-bold text-white"
+              >
+                {paymentState === 'failed' ? 'Try payment again' : 'Load secure payment'}
+              </button>
+            )}
+            {paymentState === 'processing' && (
+              <p className="mt-6 flex items-center gap-2 text-sm" role="status">
+                <LoaderCircle className="h-4 w-4 animate-spin" /> Confirming your payment…
+              </p>
+            )}
+            {paymentState === 'timedOut' && (
+              <button
+                type="button"
+                onClick={() => void checkSquare()}
+                disabled={checkingSquare}
+                className="h-13 mt-5 w-full rounded-full bg-black text-sm font-bold text-white"
+              >
+                Check payment status
+              </button>
+            )}
+          </>
+        )}
+        {step === 'review' && paymentMethod === 'mpesa' && (
           <div className="mt-7 flex items-center gap-3">
             <button
               type="button"

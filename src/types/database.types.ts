@@ -1124,6 +1124,9 @@ isOneToOne: false
 "complete_guest_checkout_payment":
 { Args: { "target_payment_id": string }; Returns: boolean
                            },
+"complete_square_checkout_payment":
+{ Args: { "target_payment_id": string }; Returns: boolean
+                           },
 "consume_guest_checkout_rate_limit":
 { Args: { "target_key_hash": string,"target_max_attempts": number,"target_window_seconds": number }; Returns: boolean
                            },
@@ -1142,6 +1145,9 @@ isOneToOne: false
 { Args: { "auth_action": string,"confirmed_condition"?: string,"decision_note": string,"target_record_id": string }; Returns: Database["public"]['Enums']["auth_record_status_enum"]
                            },
 "fail_guest_checkout_payment":
+{ Args: { "target_payment_id": string }; Returns: boolean
+                           },
+"fail_square_checkout_payment":
 { Args: { "target_payment_id": string }; Returns: boolean
                            },
 "flag_payment_review":

@@ -3,33 +3,52 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
-import { consumeGuestCheckoutRateLimit, guestOrderCookieName, hashGuestOrderToken } from '@/lib/payments/guest-checkout';
+import {
+  consumeGuestCheckoutRateLimit,
+  guestOrderCookieName,
+  hashGuestOrderToken,
+} from '@/lib/payments/guest-checkout';
+import { shippingCountries } from '@/lib/shipping/countries';
 
 const requestSchema = z.object({
   checkout_id: z.string().uuid(),
   checkout_secret: z.string().uuid(),
   name: z.string().trim().min(2).max(100),
   email: z.string().trim().email().max(254),
-  phone: z.string().trim().regex(/^(?:\+?258)?(?:84|85)\d{7}$/),
+  phone: z
+    .string()
+    .trim()
+    .regex(/^\+?[0-9 ()-]{7,25}$/)
+    .refine((value) => {
+      const digits = value.replace(/\D/g, '');
+      return digits.length >= 7 && digits.length <= 15;
+    }),
   address_line_1: z.string().trim().min(4).max(200),
   address_line_2: z.string().trim().max(200).optional().default(''),
   postal_code: z.string().trim().max(24).optional().default(''),
   delivery_notes: z.string().trim().max(500).optional().default(''),
   city: z.string().trim().min(2).max(100),
   province: z.string().trim().min(2).max(100),
-  country: z.literal('MZ'),
+  country: z
+    .string()
+    .refine((value) => shippingCountries.some((country) => country.code === value)),
   shipping_method_code: z.string().trim().min(2).max(50),
-  items: z.array(z.object({
-    listingId: z.string().uuid(),
-    size: z.string().trim().min(1).max(24),
-    quantity: z.literal(1),
-    displayedPrice: z.number().positive(),
-  })).min(1).max(10),
+  items: z
+    .array(
+      z.object({
+        listingId: z.string().uuid(),
+        size: z.string().trim().min(1).max(24),
+        quantity: z.literal(1),
+        displayedPrice: z.number().positive(),
+      })
+    )
+    .min(1)
+    .max(10),
 });
 
 function normalizeMozambiquePhone(phone: string) {
   const digits = phone.replace(/\D/g, '');
-  return digits.startsWith('258') ? digits : `258${digits}`;
+  return digits.length === 9 ? `258${digits}` : digits;
 }
 
 function clientMessage(message: string) {
@@ -55,45 +74,64 @@ function clientMessage(message: string) {
 }
 
 export async function POST(request: Request) {
-  if (process.env.MPESA_PAYMENTS_ENABLED !== 'true') {
-    return NextResponse.json({ error: 'M-Pesa checkout is not enabled for this store.' }, { status: 503 });
+  if (
+    process.env.MPESA_PAYMENTS_ENABLED !== 'true' &&
+    process.env.SQUARE_PAYMENTS_ENABLED !== 'true'
+  ) {
+    return NextResponse.json({ error: 'Checkout is not enabled for this store.' }, { status: 503 });
   }
 
   const parsed = requestSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json(
       { error: 'Checkout needs live inventory. Sample preview products cannot be purchased.' },
-      { status: 400 },
+      { status: 400 }
     );
   }
 
   if (new Set(parsed.data.items.map((item) => item.listingId)).size !== parsed.data.items.length) {
-    return NextResponse.json({ error: 'Remove duplicate pieces before checking out.' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Remove duplicate pieces before checking out.' },
+      { status: 400 }
+    );
   }
 
   try {
     const admin = createAdminClient();
     const browserSession = await createClient();
-    const { data: { user } } = await browserSession.auth.getUser();
+    const {
+      data: { user },
+    } = await browserSession.auth.getUser();
     const allowed = await consumeGuestCheckoutRateLimit(admin, request, 'create-order', 4);
     if (!allowed) {
-      return NextResponse.json({ error: 'Too many checkout attempts. Please wait and try again.' }, { status: 429 });
+      return NextResponse.json(
+        { error: 'Too many checkout attempts. Please wait and try again.' },
+        { status: 429 }
+      );
     }
 
     const orderId = parsed.data.checkout_id;
     const orderNumber = `SC${randomBytes(4).toString('hex').toUpperCase()}`;
     const guestToken = parsed.data.checkout_secret;
     const guestTokenHash = hashGuestOrderToken(guestToken);
-    const normalizedPhone = normalizeMozambiquePhone(parsed.data.phone);
+    const normalizedPhone =
+      parsed.data.country === 'MZ'
+        ? normalizeMozambiquePhone(parsed.data.phone)
+        : parsed.data.phone.replace(/[^\d+]/g, '');
 
     const { data: existingOrder, error: existingOrderError } = await admin
       .from('orders')
-      .select('id, order_number, subtotal, shipping_amount, total_amount, status, payment_expires_at, guest_access_token_hash')
+      .select(
+        'id, order_number, subtotal, shipping_amount, total_amount, status, payment_expires_at, guest_access_token_hash'
+      )
       .eq('id', orderId)
       .maybeSingle();
 
     if (existingOrderError) {
-      return NextResponse.json({ error: 'Checkout is temporarily unavailable. Please try again shortly.' }, { status: 503 });
+      return NextResponse.json(
+        { error: 'Checkout is temporarily unavailable. Please try again shortly.' },
+        { status: 503 }
+      );
     }
     if (existingOrder) {
       if (
@@ -102,7 +140,10 @@ export async function POST(request: Request) {
         !existingOrder.payment_expires_at ||
         Date.parse(existingOrder.payment_expires_at) <= Date.now()
       ) {
-        return NextResponse.json({ error: 'This checkout session has expired. Start checkout again.' }, { status: 409 });
+        return NextResponse.json(
+          { error: 'This checkout session has expired. Start checkout again.' },
+          { status: 409 }
+        );
       }
 
       const response = NextResponse.json({
@@ -155,7 +196,9 @@ export async function POST(request: Request) {
     });
 
     if (error || !data?.[0]) {
-      const safeMessage = error ? clientMessage(error.message) : 'We could not reserve these items. Refresh the shop and try again.';
+      const safeMessage = error
+        ? clientMessage(error.message)
+        : 'We could not reserve these items. Refresh the shop and try again.';
       return NextResponse.json({ error: safeMessage }, { status: 409 });
     }
 
@@ -181,8 +224,14 @@ export async function POST(request: Request) {
   } catch (error) {
     // Do not log order contact details, access tokens, phone numbers, or payment data.
     if (error instanceof Error && error.message === 'Checkout rate limit is unavailable.') {
-      return NextResponse.json({ error: 'Checkout is temporarily unavailable. Please try again shortly.' }, { status: 503 });
+      return NextResponse.json(
+        { error: 'Checkout is temporarily unavailable. Please try again shortly.' },
+        { status: 503 }
+      );
     }
-    return NextResponse.json({ error: 'Checkout is temporarily unavailable. Please try again shortly.' }, { status: 503 });
+    return NextResponse.json(
+      { error: 'Checkout is temporarily unavailable. Please try again shortly.' },
+      { status: 503 }
+    );
   }
 }

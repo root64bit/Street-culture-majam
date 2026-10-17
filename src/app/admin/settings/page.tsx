@@ -64,7 +64,10 @@ export default async function SettingsPage() {
         ? 'Server key configured · test rates in Shipping'
         : 'Server key missing',
     ],
-    ['PayFast', 'Awaiting merchant verification · not enabled'],
+    [
+      'Square card + Apple Pay',
+      process.env.SQUARE_PAYMENTS_ENABLED === 'true' ? 'Enabled · GBP settlement' : 'Disabled',
+    ],
   ];
   return (
     <section className="px-4 pb-20 pt-8 sm:px-7 lg:px-10">

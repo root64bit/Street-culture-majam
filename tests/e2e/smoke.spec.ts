@@ -17,7 +17,7 @@ async function addFirstLivePiece(page: Page) {
   await expect(page.getByRole('dialog', { name: 'Your bag · 1' })).toBeVisible();
 }
 
-async function reachReview(page: Page) {
+async function reachReview(page: Page, method: 'mpesa' | 'card' | 'applePay' = 'mpesa') {
   await page.route('**/api/checkout/shipping', async (route) => {
     await route.fulfill({
       json: {
@@ -54,9 +54,178 @@ async function reachReview(page: Page) {
   await expect(checkout.getByText('Test Maputo delivery')).toBeVisible();
   await checkout.getByRole('button', { name: 'Continue' }).click();
   await expect(checkout.getByText('M-Pesa', { exact: true })).toBeVisible();
+  if (method !== 'mpesa')
+    await checkout
+      .getByRole('button', { name: method === 'card' ? /^Card/ : /^Apple Pay/ })
+      .click();
   await checkout.getByRole('button', { name: 'Continue' }).click();
   await expect(checkout.getByText('Ready when you are.')).toBeVisible();
 }
+
+async function mockSquareCheckout(page: Page, applePayAvailable = true, mockSdk = true) {
+  if (mockSdk)
+    await page.addInitScript(
+      ({ applePayAvailable }) => {
+        Object.assign(window, {
+          Square: {
+            payments: () => ({
+              card: async () => ({
+                attach: async (element: HTMLElement) => {
+                  element.textContent = 'Secure card fields';
+                },
+                destroy: async () => {},
+                tokenize: async (details: unknown) => {
+                  Object.assign(window, { squareVerification: details });
+                  return { status: 'OK', token: 'mock-card-token' };
+                },
+              }),
+              paymentRequest: (options: unknown) => options,
+              applePay: async () => {
+                if (!applePayAvailable) throw new Error('Not supported');
+                return {
+                  destroy: async () => {},
+                  tokenize: async () => ({ status: 'OK', token: 'mock-apple-token' }),
+                };
+              },
+            }),
+          },
+        });
+      },
+      { applePayAvailable }
+    );
+  await page.route('**/api/checkout/orders', (route) =>
+    route.fulfill({
+      json: {
+        orderId,
+        orderNumber: 'SCSQUARE01',
+        subtotal: 1000,
+        shipping: 125,
+        total: 1125,
+      },
+    })
+  );
+  await page.route('**/api/payments/square/quote', (route) =>
+    route.fulfill({
+      json: {
+        orderId,
+        paymentId,
+        orderNumber: 'SCSQUARE01',
+        totalMzn: 1125,
+        amount: 13.5,
+        amountMinor: 1350,
+        currency: 'GBP',
+        expiresAt: new Date(Date.now() + 900000).toISOString(),
+      },
+    })
+  );
+}
+
+test('Square live SDK loads secure card fields without submitting a charge', async ({ page }) => {
+  test.skip(
+    process.env.SQUARE_LIVE_SDK_CHECK !== 'true',
+    'Explicit, non-charging production SDK check'
+  );
+  await mockSquareCheckout(page, true, false);
+  let chargeRequests = 0;
+  await page.route('**/api/payments/square', (route) => {
+    chargeRequests++;
+    return route.abort();
+  });
+  await reachReview(page, 'card');
+  await expect(page.getByRole('button', { name: 'Pay £13.50', exact: true })).toBeEnabled({
+    timeout: 25000,
+  });
+  expect(await page.locator('iframe').count()).toBeGreaterThan(0);
+  expect(chargeRequests).toBe(0);
+});
+
+test('Square card checkout shows the exact GBP charge and verifies the buyer', async ({ page }) => {
+  await mockSquareCheckout(page);
+  let submitted: Record<string, unknown> | null = null;
+  await page.route('**/api/payments/square', (route) => {
+    submitted = route.request().postDataJSON();
+    return route.fulfill({
+      json: { status: 'PAID', fulfillable: true, orderNumber: 'SCSQUARE01' },
+    });
+  });
+  await reachReview(page, 'card');
+  const checkout = page.getByRole('dialog', { name: 'Secure checkout' });
+  await expect(checkout.getByText('Secure card fields')).toBeVisible();
+  await checkout.getByRole('button', { name: 'Pay £13.50', exact: true }).click();
+  await expect(checkout.getByRole('heading', { name: 'Order confirmed.' })).toBeVisible();
+  expect(submitted).toEqual({
+    order_id: orderId,
+    payment_id: paymentId,
+    source_id: 'mock-card-token',
+  });
+  const verification = await page.evaluate(
+    () => (window as unknown as { squareVerification: unknown }).squareVerification
+  );
+  expect(verification).toMatchObject({
+    amount: '13.50',
+    currencyCode: 'GBP',
+    intent: 'CHARGE',
+    customerInitiated: true,
+    sellerKeyedIn: false,
+  });
+  await expect(checkout.getByText('£13.50', { exact: true })).toBeVisible();
+});
+
+test('Square Apple Pay sends the wallet token and confirms the order', async ({ page }) => {
+  await mockSquareCheckout(page);
+  let token = '';
+  await page.route('**/api/payments/square', (route) => {
+    token = route.request().postDataJSON().source_id;
+    return route.fulfill({
+      json: { status: 'PAID', fulfillable: true, orderNumber: 'SCSQUARE01' },
+    });
+  });
+  await reachReview(page, 'applePay');
+  await page.getByRole('button', { name: 'Pay £13.50 with Apple Pay' }).click();
+  await expect(page.getByRole('heading', { name: 'Order confirmed.' })).toBeVisible();
+  expect(token).toBe('mock-apple-token');
+});
+
+test('Square Apple Pay offers a card fallback on unsupported devices', async ({ page }) => {
+  await mockSquareCheckout(page, false);
+  await reachReview(page, 'applePay');
+  await expect(
+    page.getByText('Apple Pay is unavailable on this device or browser.', { exact: false })
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Pay by card instead' }).click();
+  await expect(page.getByText('Secure card fields')).toBeVisible();
+});
+
+test('Square declines allow retry and uncertain results reconcile without another charge', async ({
+  page,
+}) => {
+  await mockSquareCheckout(page);
+  let charges = 0;
+  await page.route('**/api/payments/square', (route) => {
+    charges++;
+    return charges === 1
+      ? route.fulfill({ status: 402, json: { error: 'The card was declined.' } })
+      : route.fulfill({ status: 202, json: { status: 'PROCESSING' } });
+  });
+  await page.route('**/api/payments/square/status', (route) =>
+    route.fulfill({
+      json: {
+        status: 'PAID',
+        fulfillable: true,
+        orderNumber: 'SCSQUARE01',
+      },
+    })
+  );
+  await reachReview(page, 'card');
+  await page.getByRole('button', { name: 'Pay £13.50', exact: true }).click();
+  await expect(
+    page.getByRole('dialog', { name: 'Secure checkout' }).getByRole('alert')
+  ).toContainText('declined');
+  await page.getByRole('button', { name: 'Try payment again' }).click();
+  await page.getByRole('button', { name: 'Pay £13.50', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Order confirmed.' })).toBeVisible();
+  expect(charges).toBe(2);
+});
 
 test('homepage uses the supplied brand mark and lists real live inventory', async ({ page }) => {
   await page.goto('/');

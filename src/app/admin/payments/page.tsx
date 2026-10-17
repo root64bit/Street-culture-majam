@@ -48,8 +48,7 @@ export default async function PaymentsPage({
         <div>
           <h1 className="text-4xl font-black tracking-[-0.05em]">Money, verified.</h1>
           <p className="mt-2 text-sm text-[#61766b]">
-            MineScope accepted a push request only when the provider confirms it. A pending payment
-            is not a sale.
+            Square and M-Pesa payments are recorded as paid only after provider confirmation.
           </p>
         </div>
         {reconcilePermission.data && (

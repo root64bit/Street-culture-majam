@@ -26,9 +26,16 @@ describe.runIf(runLocal)('local PostgreSQL commerce lifecycle', () => {
     shippingId = randomUUID();
     shippingCode = `TEST_${randomBytes(6).toString('hex').toUpperCase()}`;
     const { error } = await db.from('shipping_methods').insert({
-      id: shippingId, code: shippingCode, name: 'Local test delivery',
-      country_code: 'MZ', region: null, price: 125, currency: 'MZN',
-      estimated_min_days: 1, estimated_max_days: 3, active: true,
+      id: shippingId,
+      code: shippingCode,
+      name: 'Local test delivery',
+      country_code: 'MZ',
+      region: null,
+      price: 125,
+      currency: 'MZN',
+      estimated_min_days: 1,
+      estimated_max_days: 3,
+      active: true,
     });
     if (error) throw error;
   });
@@ -38,21 +45,33 @@ describe.runIf(runLocal)('local PostgreSQL commerce lifecycle', () => {
     if (payoutIds.length) await db.from('seller_payouts').delete().in('id', payoutIds);
     if (orderIds.length) await db.from('orders').delete().in('id', orderIds);
     if (listingIds.length) await db.from('listings').delete().in('id', listingIds);
-    if (submissionIds.length) await db.from('consignment_submissions').delete().in('id', submissionIds);
+    if (submissionIds.length)
+      await db.from('consignment_submissions').delete().in('id', submissionIds);
     if (shippingId) await db.from('shipping_methods').delete().eq('id', shippingId);
     if (sellerId) await db.auth.admin.deleteUser(sellerId);
     if (buyerId) await db.auth.admin.deleteUser(buyerId);
   });
 
-  async function listing(ownershipType: 'STREET_CULTURE' | 'CONSIGNMENT' = 'STREET_CULTURE', submissionId?: string) {
+  async function listing(
+    ownershipType: 'STREET_CULTURE' | 'CONSIGNMENT' = 'STREET_CULTURE',
+    submissionId?: string
+  ) {
     const id = randomUUID();
     listingIds.push(id);
     const { error } = await db.from('listings').insert({
-      id, product_id: PRODUCT_ID, variant_id: VARIANT_ID,
+      id,
+      product_id: PRODUCT_ID,
+      variant_id: VARIANT_ID,
       seller_id: ownershipType === 'CONSIGNMENT' ? sellerId : null,
-      ownership_type: ownershipType, consignment_submission_id: submissionId ?? null,
-      condition: 'NEW', status: 'LIVE', asking_price: 1000, currency: 'MZN',
-      quantity: 1, authentication_status: 'PASSED', published_at: new Date().toISOString(),
+      ownership_type: ownershipType,
+      consignment_submission_id: submissionId ?? null,
+      condition: 'NEW',
+      status: 'LIVE',
+      asking_price: 1000,
+      currency: 'MZN',
+      quantity: 1,
+      authentication_status: 'PASSED',
+      published_at: new Date().toISOString(),
     });
     if (error) throw error;
     return id;
@@ -68,7 +87,10 @@ describe.runIf(runLocal)('local PostgreSQL commerce lifecycle', () => {
       target_guest_email: 'test-buyer@example.invalid',
       target_guest_phone: '258841234567',
       target_shipping_snapshot: {
-        country: 'MZ', province: 'Maputo', city: 'Maputo', address_line_1: 'Test street 1',
+        country: 'MZ',
+        province: 'Maputo',
+        city: 'Maputo',
+        address_line_1: 'Test street 1',
       },
       target_shipping_method_code: shippingCode,
       target_items: [{ listing_id: listingId, size: '10.5', quantity: 1, expected_price: price }],
@@ -76,10 +98,18 @@ describe.runIf(runLocal)('local PostgreSQL commerce lifecycle', () => {
   }
 
   async function paymentFor(orderId: string) {
-    const { data, error } = await db.from('payments').insert({
-      order_id: orderId, provider: 'mpesa', status: 'PENDING',
-      amount: 1125, currency: 'MZN', provider_reference: `ST${randomBytes(4).toString('hex').toUpperCase()}`,
-    }).select('id').single();
+    const { data, error } = await db
+      .from('payments')
+      .insert({
+        order_id: orderId,
+        provider: 'mpesa',
+        status: 'PENDING',
+        amount: 1125,
+        currency: 'MZN',
+        provider_reference: `ST${randomBytes(4).toString('hex').toUpperCase()}`,
+      })
+      .select('id')
+      .single();
     if (error) throw error;
     return data.id;
   }
@@ -102,9 +132,153 @@ describe.runIf(runLocal)('local PostgreSQL commerce lifecycle', () => {
     expect(orders).toHaveLength(1);
   });
 
+  async function squarePaymentFor(orderId: string) {
+    const { data, error } = await db
+      .from('payments')
+      .insert({
+        order_id: orderId,
+        provider: 'square',
+        status: 'PENDING',
+        amount: 13.5,
+        currency: 'GBP',
+        idempotency_key: randomUUID(),
+        provider_payload: { amountMinor: 1350, orderTotalMzn: 1125, gbpPerMzn: 0.012 },
+      })
+      .select('id')
+      .single();
+    if (error) throw error;
+    return data.id;
+  }
+
+  async function confirmSquareProvider(paymentId: string, amountMinor = 1350) {
+    const { error } = await db
+      .from('payments')
+      .update({
+        provider_reference: `square-${paymentId}`,
+        last_provider_status: 'COMPLETED',
+        provider_payload: {
+          amountMinor: 1350,
+          orderTotalMzn: 1125,
+          gbpPerMzn: 0.012,
+          square: { amountMinor, currency: 'GBP', squareStatus: 'COMPLETED' },
+        },
+      })
+      .eq('id', paymentId);
+    if (error) throw error;
+  }
+
+  it('confirms a GBP Square settlement against the MZN order exactly once', async () => {
+    const listingId = await listing();
+    const created = await db.rpc('create_guest_checkout_order', requestFor(listingId));
+    if (created.error) throw created.error;
+    const id = created.data[0].created_order_id;
+    const paymentId = await squarePaymentFor(id);
+    await confirmSquareProvider(paymentId);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const result = await db.rpc('complete_square_checkout_payment', {
+        target_payment_id: paymentId,
+      });
+      expect(result.error).toBeNull();
+      expect(result.data).toBe(true);
+    }
+    const { data: order } = await db
+      .from('orders')
+      .select('status, payment_status, currency, total_amount')
+      .eq('id', id)
+      .single();
+    expect(order).toMatchObject({
+      status: 'CONFIRMED',
+      payment_status: 'PAID',
+      currency: 'MZN',
+      total_amount: 1125,
+    });
+    const { data: events } = await db
+      .from('order_events')
+      .select('id')
+      .eq('order_id', id)
+      .eq('event_type', 'ORDER_CONFIRMED');
+    expect(events).toHaveLength(1);
+    const { data: item } = await db.from('listings').select('status').eq('id', listingId).single();
+    expect(item?.status).toBe('SOLD');
+  });
+
+  it('accepts an international address only when the delivery quote matches its country', async () => {
+    const listingId = await listing();
+    const request = requestFor(listingId);
+    request.target_shipping_snapshot.country = 'GB';
+    request.target_shipping_snapshot.province = 'London';
+    expect((await db.rpc('create_guest_checkout_order', request)).error?.message).toContain(
+      'shipping method'
+    );
+    await db.from('shipping_methods').update({ country_code: 'GB' }).eq('id', shippingId);
+    try {
+      const created = await db.rpc('create_guest_checkout_order', request);
+      expect(created.error).toBeNull();
+      const paymentId = await squarePaymentFor(request.target_order_id);
+      await confirmSquareProvider(paymentId);
+      expect(
+        (await db.rpc('complete_square_checkout_payment', { target_payment_id: paymentId })).data
+      ).toBe(true);
+    } finally {
+      await db.from('shipping_methods').update({ country_code: 'MZ' }).eq('id', shippingId);
+    }
+  });
+
+  it('rejects an unconfirmed or mismatched Square result and blocks mixed payment methods', async () => {
+    const listingId = await listing();
+    const created = await db.rpc('create_guest_checkout_order', requestFor(listingId));
+    if (created.error) throw created.error;
+    const id = created.data[0].created_order_id;
+    const paymentId = await squarePaymentFor(id);
+    expect(
+      (await db.rpc('complete_square_checkout_payment', { target_payment_id: paymentId })).error
+    ).not.toBeNull();
+    await confirmSquareProvider(paymentId, 1300);
+    expect(
+      (await db.rpc('complete_square_checkout_payment', { target_payment_id: paymentId })).error
+    ).not.toBeNull();
+    await expect(paymentFor(id)).rejects.toMatchObject({
+      message: expect.stringContaining('Another payment method'),
+    });
+    await expect(squarePaymentFor(id)).rejects.toMatchObject({ code: '23505' });
+    expect(
+      (await db.rpc('fail_square_checkout_payment', { target_payment_id: paymentId })).error
+    ).toBeNull();
+    const { data: order } = await db
+      .from('orders')
+      .select('status, payment_status')
+      .eq('id', id)
+      .single();
+    expect(order).toMatchObject({ status: 'PENDING', payment_status: 'UNPAID' });
+    const retryId = await squarePaymentFor(id);
+    expect(retryId).not.toBe(paymentId);
+  });
+
+  it('preserves inventory while a submitted Square payment needs reconciliation', async () => {
+    const listingId = await listing();
+    const created = await db.rpc('create_guest_checkout_order', requestFor(listingId));
+    if (created.error) throw created.error;
+    const id = created.data[0].created_order_id;
+    const paymentId = await squarePaymentFor(id);
+    await db.from('payments').update({ status: 'REQUIRES_ACTION' }).eq('id', paymentId);
+    const expired = new Date(Date.now() - 60000).toISOString();
+    await db.from('orders').update({ payment_expires_at: expired }).eq('id', id);
+    await db.from('listings').update({ reservation_expires_at: expired }).eq('id', listingId);
+    expect((await db.rpc('release_expired_listing_reservations')).error).toBeNull();
+    const { data: item } = await db.from('listings').select('status').eq('id', listingId).single();
+    expect(item?.status).toBe('RESERVED');
+    await confirmSquareProvider(paymentId);
+    expect(
+      (await db.rpc('complete_square_checkout_payment', { target_payment_id: paymentId })).data
+    ).toBe(true);
+  });
+
   it('rejects changed prices without leaving an order or reservation', async () => {
     const listingId = await listing();
-    const result = await db.rpc('create_guest_checkout_order', requestFor(listingId, randomUUID(), 999));
+    const result = await db.rpc(
+      'create_guest_checkout_order',
+      requestFor(listingId, randomUUID(), 999)
+    );
     expect(result.error?.message).toContain('price changed');
     const { data } = await db.from('listings').select('status').eq('id', listingId).single();
     expect(data?.status).toBe('LIVE');
@@ -120,7 +294,11 @@ describe.runIf(runLocal)('local PostgreSQL commerce lifecycle', () => {
     expect(failed.data).toBe(true);
     const [{ data: row }, { data: order }] = await Promise.all([
       db.from('listings').select('status, reserved_by_order_id').eq('id', listingId).single(),
-      db.from('orders').select('status, payment_status').eq('id', created.data[0].created_order_id).single(),
+      db
+        .from('orders')
+        .select('status, payment_status')
+        .eq('id', created.data[0].created_order_id)
+        .single(),
     ]);
     expect(row?.status).toBe('LIVE');
     expect(row?.reserved_by_order_id).toBeNull();
@@ -132,7 +310,8 @@ describe.runIf(runLocal)('local PostgreSQL commerce lifecycle', () => {
     const created = await db.rpc('create_guest_checkout_order', requestFor(expiringListing));
     if (created.error) throw created.error;
     const orderId = created.data[0].created_order_id;
-    const { error: expiryError } = await db.from('listings')
+    const { error: expiryError } = await db
+      .from('listings')
       .update({ reservation_expires_at: new Date(Date.now() - 60_000).toISOString() })
       .eq('id', expiringListing);
     if (expiryError) throw expiryError;
@@ -156,7 +335,9 @@ describe.runIf(runLocal)('local PostgreSQL commerce lifecycle', () => {
     const orderId = created.data[0].created_order_id;
     const paymentId = await paymentFor(orderId);
     const first = await db.rpc('complete_guest_checkout_payment', { target_payment_id: paymentId });
-    const repeated = await db.rpc('complete_guest_checkout_payment', { target_payment_id: paymentId });
+    const repeated = await db.rpc('complete_guest_checkout_payment', {
+      target_payment_id: paymentId,
+    });
     expect(first.error).toBeNull();
     expect(first.data).toBe(true);
     expect(repeated.data).toBe(true);
@@ -168,75 +349,111 @@ describe.runIf(runLocal)('local PostgreSQL commerce lifecycle', () => {
     expect(payouts).toHaveLength(0);
   });
 
-  it.runIf(Boolean(process.env.LOCAL_SUPABASE_TEST_ANON_KEY))('attaches an authenticated order to its owner and enforces order RLS', async () => {
-    const email = `buyer-${randomUUID()}@example.invalid`;
-    const password = `Test-${randomBytes(16).toString('hex')}`;
-    const { data: createdUser, error: userError } = await db.auth.admin.createUser({
-      email, password, email_confirm: true,
-    });
-    if (userError || !createdUser.user) throw userError ?? new Error('Buyer missing');
-    buyerId = createdUser.user.id;
-    const { error: profileError } = await db.from('profiles').upsert({ id: buyerId, account_type: 'BUYER' });
-    if (profileError) throw profileError;
-    const listingId = await listing();
-    const checkout = requestFor(listingId);
-    const reserved = await db.rpc('create_guest_checkout_order', {
-      ...checkout, target_user_id: buyerId,
-    });
-    if (reserved.error) throw reserved.error;
-    const buyer = createClient<Database>(url!, process.env.LOCAL_SUPABASE_TEST_ANON_KEY!, {
-      auth: { persistSession: false },
-    });
-    const signedIn = await buyer.auth.signInWithPassword({ email, password });
-    if (signedIn.error) throw signedIn.error;
-    const { data: owned } = await buyer.from('orders').select('id').eq('id', checkout.target_order_id);
-    expect(owned).toHaveLength(1);
-    const stranger = createClient<Database>(url!, process.env.LOCAL_SUPABASE_TEST_ANON_KEY!, {
-      auth: { persistSession: false },
-    });
-    const { data: hidden } = await stranger.from('orders').select('id').eq('id', checkout.target_order_id);
-    expect(hidden).toHaveLength(0);
-  });
+  it.runIf(Boolean(process.env.LOCAL_SUPABASE_TEST_ANON_KEY))(
+    'attaches an authenticated order to its owner and enforces order RLS',
+    async () => {
+      const email = `buyer-${randomUUID()}@example.invalid`;
+      const password = `Test-${randomBytes(16).toString('hex')}`;
+      const { data: createdUser, error: userError } = await db.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+      });
+      if (userError || !createdUser.user) throw userError ?? new Error('Buyer missing');
+      buyerId = createdUser.user.id;
+      const { error: profileError } = await db
+        .from('profiles')
+        .upsert({ id: buyerId, account_type: 'BUYER' });
+      if (profileError) throw profileError;
+      const listingId = await listing();
+      const checkout = requestFor(listingId);
+      const reserved = await db.rpc('create_guest_checkout_order', {
+        ...checkout,
+        target_user_id: buyerId,
+      });
+      if (reserved.error) throw reserved.error;
+      const buyer = createClient<Database>(url!, process.env.LOCAL_SUPABASE_TEST_ANON_KEY!, {
+        auth: { persistSession: false },
+      });
+      const signedIn = await buyer.auth.signInWithPassword({ email, password });
+      if (signedIn.error) throw signedIn.error;
+      const { data: owned } = await buyer
+        .from('orders')
+        .select('id')
+        .eq('id', checkout.target_order_id);
+      expect(owned).toHaveLength(1);
+      const stranger = createClient<Database>(url!, process.env.LOCAL_SUPABASE_TEST_ANON_KEY!, {
+        auth: { persistSession: false },
+      });
+      const { data: hidden } = await stranger
+        .from('orders')
+        .select('id')
+        .eq('id', checkout.target_order_id);
+      expect(hidden).toHaveLength(0);
+    }
+  );
 
-  it.runIf(Boolean(process.env.LOCAL_SUPABASE_TEST_ANON_KEY))('does not expose approved but unpublished listings to anonymous readers', async () => {
-    const listingId = await listing();
-    const { error: statusError } = await db.from('listings').update({ status: 'APPROVED' }).eq('id', listingId);
-    if (statusError) throw statusError;
-    const anonymous = createClient<Database>(url!, process.env.LOCAL_SUPABASE_TEST_ANON_KEY!, {
-      auth: { persistSession: false },
-    });
-    const { data, error } = await anonymous.from('listings').select('id').eq('id', listingId);
-    expect(error).toBeNull();
-    expect(data).toHaveLength(0);
-  });
+  it.runIf(Boolean(process.env.LOCAL_SUPABASE_TEST_ANON_KEY))(
+    'does not expose approved but unpublished listings to anonymous readers',
+    async () => {
+      const listingId = await listing();
+      const { error: statusError } = await db
+        .from('listings')
+        .update({ status: 'APPROVED' })
+        .eq('id', listingId);
+      if (statusError) throw statusError;
+      const anonymous = createClient<Database>(url!, process.env.LOCAL_SUPABASE_TEST_ANON_KEY!, {
+        auth: { persistSession: false },
+      });
+      const { data, error } = await anonymous.from('listings').select('id').eq('id', listingId);
+      expect(error).toBeNull();
+      expect(data).toHaveLength(0);
+    }
+  );
 
   it('snapshots 30% commission and creates one pending payout for consignment', async () => {
     const sellerPassword = `Test-${randomBytes(16).toString('hex')}`;
     const sellerEmail = `consignor-${randomUUID()}@example.invalid`;
     const { data: user, error: userError } = await db.auth.admin.createUser({
-      email: sellerEmail, password: sellerPassword, email_confirm: true,
+      email: sellerEmail,
+      password: sellerPassword,
+      email_confirm: true,
     });
     if (userError || !user.user) throw userError ?? new Error('Seller missing');
     sellerId = user.user.id;
-    const { error: profileError } = await db.from('profiles').upsert({ id: sellerId, account_type: 'SELLER' });
+    const { error: profileError } = await db
+      .from('profiles')
+      .upsert({ id: sellerId, account_type: 'SELLER' });
     if (profileError) throw profileError;
     if (process.env.LOCAL_SUPABASE_TEST_ANON_KEY) {
       const draftId = randomUUID();
       listingIds.push(draftId);
       const { error: draftError } = await db.from('listings').insert({
-        id: draftId, product_id: PRODUCT_ID, variant_id: VARIANT_ID,
-        seller_id: sellerId, ownership_type: 'CONSIGNMENT', condition: 'NEW',
-        status: 'DRAFT', asking_price: 1000, currency: 'MZN', quantity: 1,
+        id: draftId,
+        product_id: PRODUCT_ID,
+        variant_id: VARIANT_ID,
+        seller_id: sellerId,
+        ownership_type: 'CONSIGNMENT',
+        condition: 'NEW',
+        status: 'DRAFT',
+        asking_price: 1000,
+        currency: 'MZN',
+        quantity: 1,
         authentication_status: 'PENDING',
       });
       if (draftError) throw draftError;
       const seller = createClient<Database>(url!, process.env.LOCAL_SUPABASE_TEST_ANON_KEY, {
         auth: { persistSession: false },
       });
-      const signedIn = await seller.auth.signInWithPassword({ email: sellerEmail, password: sellerPassword });
+      const signedIn = await seller.auth.signInWithPassword({
+        email: sellerEmail,
+        password: sellerPassword,
+      });
       if (signedIn.error) throw signedIn.error;
-      const prohibited = await seller.from('listings')
-        .update({ status: 'LIVE', authentication_status: 'PASSED' }).eq('id', draftId);
+      const prohibited = await seller
+        .from('listings')
+        .update({ status: 'LIVE', authentication_status: 'PASSED' })
+        .eq('id', draftId);
       expect(prohibited.error).not.toBeNull();
       const { data: draft } = await db.from('listings').select('status').eq('id', draftId).single();
       expect(draft?.status).toBe('DRAFT');
@@ -244,9 +461,16 @@ describe.runIf(runLocal)('local PostgreSQL commerce lifecycle', () => {
     const submissionId = randomUUID();
     submissionIds.push(submissionId);
     const { error: submissionError } = await db.from('consignment_submissions').insert({
-      id: submissionId, seller_id: sellerId, product_id: PRODUCT_ID,
-      brand_name: 'A/X', product_name: 'Test consignment', size: '10.5', condition: 'NEW',
-      expected_price: 1000, currency: 'MZN', status: 'LISTED',
+      id: submissionId,
+      seller_id: sellerId,
+      product_id: PRODUCT_ID,
+      brand_name: 'A/X',
+      product_name: 'Test consignment',
+      size: '10.5',
+      condition: 'NEW',
+      expected_price: 1000,
+      currency: 'MZN',
+      status: 'LISTED',
     });
     if (submissionError) throw submissionError;
     const listingId = await listing('CONSIGNMENT', submissionId);
@@ -254,10 +478,13 @@ describe.runIf(runLocal)('local PostgreSQL commerce lifecycle', () => {
     if (created.error) throw created.error;
     const orderId = created.data[0].created_order_id;
     const paymentId = await paymentFor(orderId);
-    const confirmed = await db.rpc('complete_guest_checkout_payment', { target_payment_id: paymentId });
+    const confirmed = await db.rpc('complete_guest_checkout_payment', {
+      target_payment_id: paymentId,
+    });
     expect(confirmed.error).toBeNull();
     expect(confirmed.data).toBe(true);
-    const { data: payouts, error: payoutsError } = await db.from('seller_payouts')
+    const { data: payouts, error: payoutsError } = await db
+      .from('seller_payouts')
       .select('id, gross_amount, commission_amount, net_amount, status')
       .eq('listing_id', listingId);
     if (payoutsError) throw payoutsError;
@@ -267,14 +494,22 @@ describe.runIf(runLocal)('local PostgreSQL commerce lifecycle', () => {
     expect(Number(payouts[0].commission_amount)).toBe(300);
     expect(Number(payouts[0].net_amount)).toBe(700);
     expect(payouts[0].status).toBe('PENDING');
-    const { data: submission } = await db.from('consignment_submissions').select('status').eq('id', submissionId).single();
+    const { data: submission } = await db
+      .from('consignment_submissions')
+      .select('status')
+      .eq('id', submissionId)
+      .single();
     expect(submission?.status).toBe('SOLD');
-    const { error: settledError } = await db.from('seller_payouts')
+    const { error: settledError } = await db
+      .from('seller_payouts')
       .update({ status: 'PAID', processed_at: new Date().toISOString() })
       .eq('id', payouts[0].id);
     if (settledError) throw settledError;
-    const { data: settledSubmission } = await db.from('consignment_submissions')
-      .select('status').eq('id', submissionId).single();
+    const { data: settledSubmission } = await db
+      .from('consignment_submissions')
+      .select('status')
+      .eq('id', submissionId)
+      .single();
     expect(settledSubmission?.status).toBe('PAID');
   });
 });

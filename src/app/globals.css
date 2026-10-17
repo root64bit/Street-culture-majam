@@ -2,6 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+.square-apple-pay {
+  display: inline-block;
+  height: 48px;
+  border-radius: 9999px;
+  -webkit-appearance: -apple-pay-button;
+  -apple-pay-button-type: pay;
+  -apple-pay-button-style: black;
+}
+
 :root {
   color-scheme: light;
   --background: #fbfaf6;
@@ -17,7 +26,12 @@ html {
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: var(--font-geist-sans, 'Segoe UI'), -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  font-family:
+    var(--font-geist-sans, 'Segoe UI'),
+    -apple-system,
+    BlinkMacSystemFont,
+    Roboto,
+    sans-serif;
   overflow-x: hidden;
   min-height: 100vh;
 }
