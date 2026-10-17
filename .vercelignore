@@ -1,0 +1,17 @@
+.git
+.vercel
+.env*
+node_modules
+.next
+.pnpm-store
+.supabase
+out
+dist
+build
+outputs
+tmp
+coverage
+playwright-report
+test-results
+*.tsbuildinfo
+*.log

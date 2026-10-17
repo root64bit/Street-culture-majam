@@ -7,6 +7,7 @@ import { GlassPanel } from '@/components/ui/GlassPanel';
 import { Button } from '@/components/ui/Button';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
 import { ChangePasswordForm } from '@/components/account/ChangePasswordForm';
+import { PhoneVerification } from '@/components/account/PhoneVerification';
 import { Package, Heart, Tag, CreditCard, Shield, LogOut, Settings } from 'lucide-react';
 
 export default async function AccountPage() {
@@ -141,6 +142,7 @@ export default async function AccountPage() {
           </Link>
         </GlassPanel>
 
+        {process.env.NEXT_PUBLIC_PHONE_OTP_ENABLED === 'true' && <PhoneVerification currentPhone={user.phone} />}
         <ChangePasswordForm email={user.email || ''} />
       </Container>
     </div>

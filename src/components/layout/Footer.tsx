@@ -2,6 +2,7 @@ import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { businessDetails, supportDetails, whatsappHref } from '@/lib/storefront/business';
+import { NewsletterSignup } from '@/components/marketing/NewsletterSignup';
 
 export function Footer() {
   return (
@@ -177,6 +178,7 @@ export function Footer() {
           </div>
         </div>
 
+        {process.env.NEXT_PUBLIC_NEWSLETTER_ENABLED === 'true' && <NewsletterSignup />}
         <div className="flex flex-col items-center justify-between border-t border-white/5 pt-8 font-mono text-[11px] text-neutral-500 sm:flex-row">
           <div>© {new Date().getFullYear()} STREET CULTURE. ALL RIGHTS RESERVED.</div>
           <div className="mt-4 flex gap-6 sm:mt-0">

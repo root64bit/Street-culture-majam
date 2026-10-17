@@ -129,6 +129,7 @@ const groups = [
       { label: 'Staff & roles', href: '/admin/staff', icon: Users, capability: 'roles.read' },
       { label: 'Audit log', href: '/admin/audit', icon: ScrollText, capability: 'audit.read' },
       { label: 'Settings', href: '/admin/settings', icon: Settings, capability: 'settings.read' },
+      { label: 'Email marketing', href: '/admin/marketing', icon: MessageSquareText, capability: 'settings.manage' },
     ],
   },
 ];

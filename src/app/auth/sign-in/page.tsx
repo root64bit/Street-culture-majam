@@ -9,12 +9,13 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { createClient } from '@/lib/supabase/client';
 import { signInSchema } from '@/lib/schemas/auth.schema';
+import { OtpSignIn } from '@/components/auth/OtpSignIn';
+import { safeAuthRedirect } from '@/lib/auth-redirect';
 
 function SignInForm() {
   const searchParams = useSearchParams();
   const requestedRedirect = searchParams.get('redirectTo') || '/account';
-  const redirectTo = requestedRedirect.startsWith('/') && !requestedRedirect.startsWith('//')
-    ? requestedRedirect : '/account';
+  const redirectTo = safeAuthRedirect(requestedRedirect);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -59,19 +60,22 @@ function SignInForm() {
       <Container className="max-w-md">
         <GlassPanel intensity="heavy" className="border-black/10 bg-white shadow-xl">
           <div className="mb-6 text-center">
-            <span className="text-[10px] font-mono tracking-widest text-lime-700 uppercase block mb-1">
+            <span className="mb-1 block font-mono text-[10px] uppercase tracking-widest text-lime-700">
               AUTHENTICATED ACCESS
             </span>
             <h1 className="text-2xl font-black uppercase tracking-tight text-neutral-950">
               SIGN IN TO VAULT
             </h1>
-            <p className="mt-1 text-xs font-mono text-neutral-600">
+            <p className="mt-1 font-mono text-xs text-neutral-600">
               Access your saved grails, consignments, and orders
             </p>
           </div>
 
           {error && (
-            <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-xs font-mono text-red-700">
+            <div
+              role="alert"
+              className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 font-mono text-xs text-red-700"
+            >
               {error}
             </div>
           )}
@@ -99,10 +103,10 @@ function SignInForm() {
               required
             />
 
-            <div className="flex items-center justify-between text-[11px] font-mono">
+            <div className="flex items-center justify-between font-mono text-[11px]">
               <Link
                 href="/auth/forgot-password"
-                className="text-neutral-600 hover:text-neutral-950 transition-colors"
+                className="text-neutral-600 transition-colors hover:text-neutral-950"
               >
                 FORGOT PASSWORD?
               </Link>
@@ -113,9 +117,13 @@ function SignInForm() {
             </Button>
           </form>
 
-          <div className="mt-6 border-t border-black/10 pt-4 text-center text-xs font-mono text-neutral-600">
+          {process.env.NEXT_PUBLIC_EMAIL_OTP_ENABLED === 'true' && (
+            <OtpSignIn redirectTo={redirectTo} />
+          )}
+
+          <div className="mt-6 border-t border-black/10 pt-4 text-center font-mono text-xs text-neutral-600">
             DON&apos;T HAVE AN ACCOUNT?{' '}
-            <Link href="/auth/sign-up" className="text-lime-700 font-semibold hover:underline">
+            <Link href="/auth/sign-up" className="font-semibold text-lime-700 hover:underline">
               CREATE ONE
             </Link>
           </div>
@@ -129,7 +137,7 @@ export default function SignInPage() {
   return (
     <Suspense
       fallback={
-        <div className="py-24 text-center text-xs font-mono text-neutral-500">
+        <div className="py-24 text-center font-mono text-xs text-neutral-500">
           INITIALIZING VAULT AUTHENTICATION...
         </div>
       }
@@ -138,4 +146,3 @@ export default function SignInPage() {
     </Suspense>
   );
 }
-
