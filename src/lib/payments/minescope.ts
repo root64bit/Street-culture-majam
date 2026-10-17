@@ -8,6 +8,7 @@ import {
   type CreatePaymentInput,
   type ProviderPayment,
 } from '@/lib/payments/types';
+import { MPESA_MAX_TRANSACTION_MZN } from '@/lib/payments/mpesa-installments';
 
 const DEFAULT_BASE_URL = 'https://minescoop-mz.web.app/api/mpesa';
 const REQUEST_TIMEOUT_MS = 20_000;
@@ -60,7 +61,9 @@ function getMineScopeBaseUrl() {
     url.search ||
     url.hash
   ) {
-    throw new PaymentGatewayUnavailableError('The MineScope gateway URL is not an approved endpoint.');
+    throw new PaymentGatewayUnavailableError(
+      'The MineScope gateway URL is not an approved endpoint.'
+    );
   }
 
   return url.toString().replace(/\/$/, '');
@@ -100,21 +103,35 @@ function normalizeMsisdn(phone: string) {
   return normalized;
 }
 
-export async function initiateMineScopePayment(input: CreatePaymentInput): Promise<ProviderPayment> {
-  if (input.currency !== 'MZN' || !Number.isInteger(input.amountMinor) || input.amountMinor <= 0 || input.amountMinor % 100 !== 0) {
+export async function initiateMineScopePayment(
+  input: CreatePaymentInput
+): Promise<ProviderPayment> {
+  if (
+    input.currency !== 'MZN' ||
+    !Number.isInteger(input.amountMinor) ||
+    input.amountMinor <= 0 ||
+    input.amountMinor % 100 !== 0
+  ) {
     throw new Error('M-Pesa requires a positive whole-MZN order amount.');
   }
   if (!input.customerPhone) {
     throw new Error('An M-Pesa phone number is required.');
   }
+  if (input.amountMinor > MPESA_MAX_TRANSACTION_MZN * 100) {
+    throw new Error(`M-Pesa accepts at most ${MPESA_MAX_TRANSACTION_MZN} MZN per transaction.`);
+  }
 
   const references = makeMineScopeReferences(input.idempotencyKey);
-  const { response, data } = await post('/pay', {
-    amount: input.amountMinor / 100,
-    msisdn: normalizeMsisdn(input.customerPhone),
-    reference: references.reference,
-    thirdPartyRef: references.thirdPartyRef,
-  }, paymentResponseSchema);
+  const { response, data } = await post(
+    '/pay',
+    {
+      amount: input.amountMinor / 100,
+      msisdn: normalizeMsisdn(input.customerPhone),
+      reference: references.reference,
+      thirdPartyRef: references.thirdPartyRef,
+    },
+    paymentResponseSchema
+  );
 
   if (response.status >= 500) throw new PaymentOutcomeUnknownError();
 
@@ -152,10 +169,14 @@ export async function getMineScopePayment(providerReference: string): Promise<Pr
     throw new Error('The MineScope payment reference is invalid.');
   }
 
-  const { response, data } = await post('/status', {
-    queryRef: providerReference,
-    thirdPartyRef: providerReference,
-  }, statusResponseSchema);
+  const { response, data } = await post(
+    '/status',
+    {
+      queryRef: providerReference,
+      thirdPartyRef: providerReference,
+    },
+    statusResponseSchema
+  );
 
   if (!response.ok && !data.responseCode) {
     throw new Error('MineScope could not return the payment status.');
@@ -163,9 +184,17 @@ export async function getMineScopePayment(providerReference: string): Promise<Pr
 
   const transactionStatus = data.transactionStatus?.trim().toLowerCase();
   let status: ProviderPayment['status'] = 'PENDING';
-  if (response.ok && data.success && data.responseCode === 'INS-0' && transactionStatus === 'completed') {
+  if (
+    response.ok &&
+    data.success &&
+    data.responseCode === 'INS-0' &&
+    transactionStatus === 'completed'
+  ) {
     status = 'PAID';
-  } else if (['cancelled', 'canceled'].includes(transactionStatus ?? '') || data.responseCode === 'INS-5') {
+  } else if (
+    ['cancelled', 'canceled'].includes(transactionStatus ?? '') ||
+    data.responseCode === 'INS-5'
+  ) {
     status = 'CANCELLED';
   } else if (['failed', 'rejected'].includes(transactionStatus ?? '')) {
     status = 'FAILED';

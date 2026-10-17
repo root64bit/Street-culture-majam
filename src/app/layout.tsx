@@ -5,9 +5,7 @@ import { CurrencyProvider } from '@/features/currency/CurrencyProvider';
 import { SiteChrome } from '@/components/layout/SiteChrome';
 
 export const metadata: Metadata = {
-  metadataBase: new URL(
-    process.env.NEXT_PUBLIC_SITE_URL || 'https://street-culture-majam.vercel.app'
-  ),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://www.streetculturevault.com'),
   title: 'STREET CULTURE — Authenticity is the culture',
   description:
     'Curated sneakers, streetwear and luxury. Every item is verified before it reaches you.',

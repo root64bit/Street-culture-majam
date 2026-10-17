@@ -1,6 +1,7 @@
 import { requireCapabilitiesPage } from '@/lib/admin/access';
 import { ConfigurationForm } from '@/components/admin/ConfigurationForm';
 import type { FormField } from '@/lib/admin/configuration';
+import { internetExpressConfigured } from '@/lib/shipping/internet-express';
 
 const fields: Record<string, FormField[]> = {
   store: [
@@ -57,6 +58,13 @@ export default async function SettingsPage() {
     ],
     ['Display currencies', 'MZN checkout · EUR / ZAR estimates'],
     ['Shipping', 'Managed in the Shipping module'],
+    [
+      'Internet Express',
+      internetExpressConfigured()
+        ? 'Server key configured · test rates in Shipping'
+        : 'Server key missing',
+    ],
+    ['PayFast', 'Awaiting merchant verification · not enabled'],
   ];
   return (
     <section className="px-4 pb-20 pt-8 sm:px-7 lg:px-10">

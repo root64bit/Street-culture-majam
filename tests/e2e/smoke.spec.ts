@@ -26,8 +26,11 @@ async function reachReview(page: Page) {
             id: 'a1000000-0000-4000-8000-000000000003',
             code: 'TEST_MAPUTO',
             name: 'Test Maputo delivery',
+            description: 'Test courier service',
             price: 125,
             currency: 'MZN',
+            provider_price: 35,
+            provider_currency: 'ZAR',
             estimated_min_days: 1,
             estimated_max_days: 3,
           },
@@ -46,6 +49,8 @@ async function reachReview(page: Page) {
   await checkout.getByLabel('Phone').fill('841234567');
   await checkout.getByRole('button', { name: 'Continue' }).click();
   await checkout.getByLabel('Address line 1').fill('Rua Teste 12');
+  await checkout.getByLabel('Suburb / local area').fill('Polana');
+  await checkout.getByLabel('Postal code').fill('1100');
   await expect(checkout.getByText('Test Maputo delivery')).toBeVisible();
   await checkout.getByRole('button', { name: 'Continue' }).click();
   await expect(checkout.getByText('M-Pesa', { exact: true })).toBeVisible();
@@ -233,6 +238,83 @@ test('mocked M-Pesa confirmation shows the order summary without contacting Mine
     'href',
     '/order/SC1234ABCD'
   );
+});
+
+test('M-Pesa totals above 75,000 MZN are confirmed through sequential installments', async ({
+  page,
+}) => {
+  const installmentPaymentIds = [
+    'a1000000-0000-4000-8000-000000000011',
+    'a1000000-0000-4000-8000-000000000012',
+    'a1000000-0000-4000-8000-000000000013',
+  ];
+  let initiationIndex = 0;
+  let statusIndex = 0;
+
+  await page.route('**/api/checkout/orders', (route) =>
+    route.fulfill({
+      json: {
+        orderId,
+        orderNumber: 'SCSPLIT001',
+        subtotal: 159875,
+        shipping: 125,
+        total: 160000,
+      },
+    })
+  );
+  await page.route('**/api/payments/mpesa/initiate', (route) => {
+    const current = initiationIndex++;
+    const paidAmount = current * 75_000;
+    const installmentAmount = current === 2 ? 10_000 : 75_000;
+    return route.fulfill({
+      status: 202,
+      json: {
+        orderId,
+        orderNumber: 'SCSPLIT001',
+        paymentId: installmentPaymentIds[current],
+        status: 'PENDING',
+        paidAmount,
+        remainingAmount: 160_000 - paidAmount,
+        nextInstallmentAmount: installmentAmount,
+        installmentAmount,
+        installmentNumber: current + 1,
+        installmentCount: 3,
+      },
+    });
+  });
+  await page.route('**/api/payments/*/status?*', (route) => {
+    const current = statusIndex++;
+    const paidAmount = current === 0 ? 75_000 : current === 1 ? 150_000 : 160_000;
+    const remainingAmount = 160_000 - paidAmount;
+    return route.fulfill({
+      json: {
+        status: current < 2 ? 'PARTIALLY_PAID' : 'PAID',
+        orderStatus: current < 2 ? 'PENDING' : 'CONFIRMED',
+        orderNumber: 'SCSPLIT001',
+        fulfillable: current === 2,
+        paidAmount,
+        remainingAmount,
+        nextInstallmentAmount: current === 0 ? 75_000 : current === 1 ? 10_000 : 0,
+        installmentNumber: Math.min(current + 2, 3),
+        installmentCount: 3,
+      },
+    });
+  });
+
+  await reachReview(page);
+  const checkout = page.getByRole('dialog', { name: 'Secure checkout' });
+  await checkout.getByRole('button', { name: 'Continue with M-Pesa' }).click();
+  await expect(checkout.getByText('Installment confirmed')).toBeVisible();
+  await expect(checkout.getByText(/75[,.\s]000/).first()).toBeVisible();
+
+  await checkout.getByRole('button', { name: 'Pay installment 2 of 3' }).click();
+  await expect(checkout.getByRole('button', { name: 'Pay installment 3 of 3' })).toBeVisible();
+  await checkout.getByRole('button', { name: 'Pay installment 3 of 3' }).click();
+
+  await expect(checkout.getByRole('heading', { name: 'Order confirmed.' })).toBeVisible();
+  await expect(checkout.getByText('SCSPLIT001')).toBeVisible();
+  expect(initiationIndex).toBe(3);
+  expect(statusIndex).toBe(3);
 });
 
 test('mocked declined payment leaves the customer in checkout with a clear retry', async ({

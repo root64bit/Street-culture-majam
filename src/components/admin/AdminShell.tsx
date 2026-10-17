@@ -28,6 +28,7 @@ import {
   Images,
   ChartNoAxesCombined,
   Bell,
+  MessageSquareText,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SearchCommand } from '@/components/admin/SearchCommand';
@@ -105,6 +106,12 @@ const groups = [
         label: 'Customers',
         href: '/admin/customers',
         icon: UserRound,
+        capability: 'customers.read',
+      },
+      {
+        label: 'Contact requests',
+        href: '/admin/contact',
+        icon: MessageSquareText,
         capability: 'customers.read',
       },
       {

@@ -2,11 +2,14 @@ export const orderEventLabels: Record<string, string> = {
   ORDER_CREATED: 'Order placed',
   LISTING_RESERVED: 'Piece reserved',
   PAYMENT_INITIATED: 'M-Pesa request sent',
+  PAYMENT_INSTALLMENT_CONFIRMED: 'M-Pesa installment received',
+  PAYMENT_INSTALLMENT_FAILED: 'M-Pesa installment declined',
   PAYMENT_CONFIRMED: 'Payment received',
   ORDER_CONFIRMED: 'Order confirmed',
   PAYMENT_FAILED: 'Payment declined',
   RESERVATION_EXPIRED: 'Reservation expired',
   PAID_ORDER_REQUIRES_REVIEW: 'Our team is reviewing your payment',
+  PARTIAL_PAYMENT_HOLD_EXTENDED: 'Partial payment under review',
   ORDER_PROCESSING: 'Preparing your order',
   ORDER_PACKED: 'Packed and ready',
   ORDER_SHIPPED: 'Order shipped',
@@ -42,6 +45,7 @@ export const consignmentLabels: Record<string, string> = {
 
 export function readableOrderStatus(status: string, paymentStatus: string) {
   if (paymentStatus === 'PAID' && status === 'CANCELLED') return 'Payment under review';
+  if (paymentStatus === 'AUTHORIZED' && status === 'PENDING') return 'Partially paid · balance due';
   if (status === 'PENDING') return 'Awaiting payment';
   return status.charAt(0) + status.slice(1).toLowerCase();
 }
