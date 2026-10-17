@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
-import { Clock3, LockKeyhole, MapPin } from 'lucide-react';
+import { Clock3, LockKeyhole, MapPin, MessageCircle } from 'lucide-react';
 import { ContactForm } from '@/components/contact/ContactForm';
+import { supportDetails, whatsappHref } from '@/lib/storefront/business';
 
 export const metadata: Metadata = {
   title: 'Contact Street Culture',
@@ -21,6 +22,20 @@ export default function ContactPage() {
             consignments, authenticity concerns and privacy requests.
           </p>
           <div className="mt-10 space-y-5 border-t border-white/10 pt-8 text-sm">
+            {supportDetails.whatsapp && (
+              <a
+                href={whatsappHref() || undefined}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex gap-3 transition-colors hover:text-acid"
+              >
+                <MessageCircle className="mt-0.5 h-5 w-5 shrink-0 text-acid" />
+                <span>
+                  <strong className="block">WhatsApp support</strong>
+                  <span className="text-white/75">{supportDetails.whatsappLabel}</span>
+                </span>
+              </a>
+            )}
             <div className="flex gap-3">
               <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-acid" />
               <span>

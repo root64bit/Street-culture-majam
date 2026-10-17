@@ -10,6 +10,7 @@ export const supportDetails = {
   email: process.env.NEXT_PUBLIC_SUPPORT_EMAIL?.trim() || null,
   phone: process.env.NEXT_PUBLIC_SUPPORT_PHONE?.trim() || null,
   whatsapp: process.env.NEXT_PUBLIC_WHATSAPP_NUMBER?.replace(/\D/g, '') || null,
+  whatsappLabel: process.env.NEXT_PUBLIC_WHATSAPP_NUMBER?.trim() || null,
 } as const;
 
 export function whatsappHref(message = 'Hello Street Culture, I need help with an order.') {
