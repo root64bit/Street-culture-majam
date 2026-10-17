@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { createClient } from '@/lib/supabase/client';
+import { PhoneNumberInput } from '@/components/ui/PhoneNumberInput';
 
 export function PhoneVerification({ currentPhone }: { currentPhone?: string }) {
   const [phone, setPhone] = useState(currentPhone ? `+${currentPhone.replace(/^\+/, '')}` : '');
@@ -24,7 +25,7 @@ export function PhoneVerification({ currentPhone }: { currentPhone?: string }) {
     if (cooldown || loading) return;
     const normalized = phone.replace(/[\s()-]/g, '');
     if (!/^\+[1-9]\d{6,14}$/.test(normalized)) {
-      setError('Enter your mobile number including its country code.');
+      setError('Choose your country and enter a valid mobile number.');
       return;
     }
     setLoading(true);
@@ -39,7 +40,7 @@ export function PhoneVerification({ currentPhone }: { currentPhone?: string }) {
       setPhone(normalized);
       setSent(true);
       setCooldown(60);
-      setMessage('A verification code was sent by SMS.');
+      setMessage(`A verification code was sent by SMS to ${normalized}.`);
     } catch {
       setError('Could not send your code. Please try again.');
     } finally {
@@ -75,7 +76,8 @@ export function PhoneVerification({ currentPhone }: { currentPhone?: string }) {
     <section className="mb-8 rounded-xl border border-black/10 bg-white p-6 shadow-sm sm:p-8">
       <h2 className="text-xl font-black uppercase text-neutral-950">Phone verification</h2>
       <p className="mt-2 text-sm text-neutral-600">
-        Add a mobile number to this account for code-based sign-in.
+        Add a mobile number to this account for code-based sign-in. Delivery depends on your country
+        and carrier.
       </p>
       {message && (
         <p role="status" className="mt-4 text-sm text-emerald-800">
@@ -89,15 +91,7 @@ export function PhoneVerification({ currentPhone }: { currentPhone?: string }) {
       )}
       {!sent ? (
         <form onSubmit={send} className="mt-5 space-y-4">
-          <Input
-            tone="light"
-            label="Mobile number with country code"
-            type="tel"
-            autoComplete="tel"
-            value={phone}
-            onChange={(event) => setPhone(event.target.value)}
-            required
-          />
+          <PhoneNumberInput initialValue={phone} onChange={setPhone} disabled={loading} />
           <Button type="submit" variant="acid" isLoading={loading} disabled={cooldown > 0}>
             {cooldown ? `Send again in ${cooldown}s` : 'Send verification code'}
           </Button>
@@ -125,6 +119,19 @@ export function PhoneVerification({ currentPhone }: { currentPhone?: string }) {
             onClick={() => void send()}
           >
             {cooldown ? `Resend in ${cooldown}s` : 'Resend code'}
+          </button>
+          <button
+            type="button"
+            className="ml-4 text-sm text-emerald-800"
+            disabled={loading}
+            onClick={() => {
+              setSent(false);
+              setCode('');
+              setMessage('');
+              setError('');
+            }}
+          >
+            Change number
           </button>
         </form>
       )}

@@ -15,6 +15,7 @@ Supabase Free remains the account/session/database provider. Twilio Email delive
 
 - Email/password sign-up can be confirmed with the code or link from the branded email. Existing customers can also sign in with an email code.
 - Customers first sign in and verify a mobile number in Account. SMS login uses that linked number and does not automatically create a second account.
+- Both phone forms use a searchable country/calling-code selector. A private, uncached `/api/location` response suggests the connection's country on Vercel; the browser region is a fallback, then Mozambique. Existing numbers and saved manual country choices take priority, and late suggestions never overwrite input. Only a country preference is stored locally—no GPS request, extra geolocation service, or stored phone number is involved. Local numbers and pasted international numbers are normalized to E.164 before authentication requests.
 - International delivery depends on Twilio country permissions, local rules and carrier availability. Keep Fraud Guard enabled and monitor usage/costs in Twilio.
 - WhatsApp login stays disabled until a business-owned sender is approved and linked to the Verify service. Do not migrate/delete an existing WhatsApp support number without a separate decision. Enabling a channel without a sender does not make it usable.
 

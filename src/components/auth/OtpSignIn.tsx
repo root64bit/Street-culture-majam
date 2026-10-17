@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { createClient } from '@/lib/supabase/client';
 import { safeAuthRedirect } from '@/lib/auth-redirect';
+import { PhoneNumberInput } from '@/components/ui/PhoneNumberInput';
 
 export function OtpSignIn({ redirectTo = '/account' }: { redirectTo?: string }) {
   const phoneEnabled = process.env.NEXT_PUBLIC_PHONE_OTP_ENABLED === 'true';
@@ -37,7 +38,7 @@ export function OtpSignIn({ redirectTo = '/account' }: { redirectTo?: string }) 
       setError(
         method === 'email'
           ? 'Enter a valid email address.'
-          : 'Include your country code, for example +27 or +258.'
+          : 'Choose your country and enter a valid mobile number.'
       );
       return;
     }
@@ -127,24 +128,42 @@ export function OtpSignIn({ redirectTo = '/account' }: { redirectTo?: string }) 
       )}
       {!sent ? (
         <form onSubmit={send} className="mt-4 space-y-4">
-          <Input
-            tone="light"
-            label={method === 'email' ? 'Your account email' : 'Verified phone number'}
-            type={method === 'email' ? 'email' : 'tel'}
-            autoComplete={method === 'email' ? 'email' : 'tel'}
-            value={identifier}
-            onChange={(event) => setIdentifier(event.target.value)}
-            placeholder={method === 'email' ? 'you@example.com' : '+27 66 548 8223'}
-            required
-          />
+          {method === 'email' ? (
+            <Input
+              tone="light"
+              label="Your account email"
+              type="email"
+              autoComplete="email"
+              value={identifier}
+              onChange={(event) => setIdentifier(event.target.value)}
+              placeholder="you@example.com"
+              required
+            />
+          ) : (
+            <PhoneNumberInput
+              key={method}
+              initialValue={identifier}
+              onChange={setIdentifier}
+              label="Verified mobile number"
+              disabled={loading}
+            />
+          )}
           {method !== 'email' && (
             <p className="text-xs text-neutral-500">
               First verify your phone number in your account settings. Delivery depends on your
               country and carrier.
             </p>
           )}
-          <Button variant="acid" type="submit" className="w-full" isLoading={loading}>
-            Send {method === 'whatsapp' ? 'WhatsApp' : method === 'sms' ? 'SMS' : 'email'} code
+          <Button
+            variant="acid"
+            type="submit"
+            className="w-full"
+            isLoading={loading}
+            disabled={cooldown > 0}
+          >
+            {cooldown
+              ? `Send again in ${cooldown}s`
+              : `Send ${method === 'whatsapp' ? 'WhatsApp' : method === 'sms' ? 'SMS' : 'email'} code`}
           </Button>
         </form>
       ) : (
