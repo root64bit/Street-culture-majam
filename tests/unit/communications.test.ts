@@ -11,6 +11,24 @@ import {
 import { sendEmail } from '@/lib/communications/email';
 import { POST } from '@/app/api/hooks/auth-email/route';
 import { safeAuthRedirect } from '@/lib/auth-redirect';
+import { brandedEmail } from '@/lib/communications/templates';
+
+describe('email contrast in dark-mode mail apps', () => {
+  it('does not rely on body colour for the heading, message or OTP', () => {
+    const { html } = brandedEmail({
+      title: 'Confirm it’s you',
+      message: 'Enter this code',
+      code: '000000',
+    });
+    for (const tag of ['h1', 'div', 'p']) {
+      const element = html.match(new RegExp('<' + tag + ' class="sc-(?:text|code)"[^>]+>'))?.[0];
+      expect(element).toContain('color:#142219!important');
+      expect(element).toContain('-webkit-text-fill-color:#142219!important');
+    }
+    expect(html).toContain('name="color-scheme" content="only light"');
+    expect(html).toContain('bgcolor="#ffffff"');
+  });
+});
 
 describe('safe auth destinations', () => {
   it('preserves internal checkout paths and rejects external redirects', () => {
