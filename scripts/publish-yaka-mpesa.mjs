@@ -63,7 +63,7 @@ try {
       ['/api/payments/payfast-sandbox/notify', 'POST', 503],
       ['/api/payments/stripe/quote', 'POST', 404], ['/api/payments/stripe/session', 'POST', 404],
       ['/api/payments/stripe/webhook', 'POST', 404],
-      ['/api/checkout/orders', 'POST', 400], ['/api/cron/payments', 'GET', 401]];
+      ['/api/checkout/orders', 'POST', 503], ['/api/cron/payments', 'GET', 401]];
     for (const [path, method, expected] of cases) {
       let status, body;
       if (staged) {
@@ -83,6 +83,7 @@ try {
       }
       if (status !== expected) throw new Error(path + ': unexpected HTTP ' + status);
       if (path === '/api/payments/mpesa/initiate' && !body.includes('not enabled')) throw new Error('Payment-off guard not verified.');
+      if (path === '/api/checkout/orders' && !body.includes('Checkout is not enabled')) throw new Error('Checkout-off guard not verified.');
       checks.push({ path, method, status });
     }
     save(staged ? 'staged-verified.json' : 'verified.json', { passed: true, origin, checks,
