@@ -1,14 +1,8 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { z } from 'zod';
-import { fetchMznExchangeRates } from '@/lib/currency';
 import { consumeGuestCheckoutRateLimit } from '@/lib/payments/guest-checkout';
-import { checkoutParcels, checkoutShippingMethods } from '@/lib/shipping/checkout';
-import {
-  CourierError,
-  getInternetExpressRates,
-  internetExpressConfigured,
-} from '@/lib/shipping/internet-express';
+import { checkoutParcels } from '@/lib/shipping/checkout';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import {
@@ -17,6 +11,10 @@ import {
   newCheckoutSession,
 } from '@/lib/shipping/quote-session';
 import { shippingDestinationSchema, validDestinationRegion } from '@/lib/shipping/destination';
+import { configuredMethodApplies, maputoDeliveryZone } from '@/lib/shipping/maputo-delivery';
+import { getPortadorDiarioQuote, PortadorDiarioError } from '@/lib/shipping/portador-diario';
+
+export const maxDuration = 75;
 
 const schema = shippingDestinationSchema.extend({
   items: z
@@ -94,6 +92,7 @@ export async function POST(request: Request) {
       data: { user },
     } = await browser.auth.getUser();
     const destination = shippingDestinationSchema.parse(parsed.data);
+    const localDelivery = maputoDeliveryZone(destination);
     const { data: configured, error: configuredError } = await admin
       .from('shipping_methods')
       .select('*')
@@ -111,7 +110,7 @@ export async function POST(request: Request) {
       provider_currency: 'ZAR' | 'MZN';
       estimated_min_days: number;
       estimated_max_days: number;
-      source: 'internet_express' | 'configured';
+      source: 'configured' | 'portador_diario';
       methodId?: string;
       rate: number;
       rateUpdated: string;
@@ -119,14 +118,13 @@ export async function POST(request: Request) {
       quoteId?: string;
       expiresAt?: string;
     }[] = (configured ?? [])
-      .filter(
-        (method) =>
-          !method.region || method.region.toLowerCase() === destination.province.toLowerCase()
-      )
+      .filter((method) => configuredMethodApplies(method, destination))
       .map((method) => ({
         code: method.code,
         name: method.name,
-        description: '',
+        description: localDelivery
+          ? 'Store-arranged local delivery. Delivery timing will be confirmed by the store.'
+          : '',
         price: Number(method.price),
         currency: 'MZN',
         provider_price: Number(method.price),
@@ -139,44 +137,37 @@ export async function POST(request: Request) {
         rateUpdated: new Date().toISOString(),
         references: {},
       }));
-    let providerError: unknown;
     const parcels = checkoutParcels(parsed.data.items.length);
-    if (internetExpressConfigured()) {
-      const streetAddress = [parsed.data.address_line_1, parsed.data.address_line_2]
-        .filter(Boolean)
-        .join(', ');
-      try {
-        const [quote, exchange] = await Promise.all([
-          getInternetExpressRates({
-            delivery_address: {
-              type: parsed.data.address_type,
-              company: '',
-              street_address: streetAddress,
-              local_area: parsed.data.local_area,
-              city: parsed.data.city,
-              zone: parsed.data.province,
-              country: parsed.data.country,
-              code: parsed.data.postal_code,
-            },
-            parcels,
-          }),
-          fetchMznExchangeRates(),
-        ]);
-        methods.push(
-          ...checkoutShippingMethods(quote.rates, exchange.rates, parsed.data.country).map(
-            (method) => ({
-              ...method,
-              rate: exchange.rates.ZAR,
-              rateUpdated: exchange.updatedAt,
-              references: { quotedAt: quote.quotedAt, collectionAddress: quote.collectionAddress },
-            })
-          )
-        );
-      } catch (error) {
-        providerError = error;
-      }
+    if (destination.country === 'MZ' && !localDelivery) {
+      // Domestic stock ships from Maputo, never from the South African account.
+      // The public Portador Diário calculator receives city IDs and weight only.
+      const quote = await getPortadorDiarioQuote(
+        destination.city,
+        parcels.reduce((total, parcel) => total + parcel.submitted_weight_kg, 0)
+      );
+      methods.push({
+        code: quote.code,
+        name: quote.name,
+        description:
+          'National shipment from Maputo. Carrier estimate based on the displayed parcel weight; delivery timing confirmed by the store.',
+        price: quote.price,
+        currency: 'MZN',
+        provider_price: quote.price,
+        provider_currency: 'MZN',
+        estimated_min_days: 0,
+        estimated_max_days: 0,
+        source: 'portador_diario',
+        rate: 1,
+        rateUpdated: quote.quotedAt,
+        references: {
+          origin: quote.from,
+          destination: quote.to,
+          weightKg: quote.weightKg,
+          service: quote.service,
+          quotedAt: quote.quotedAt,
+        },
+      });
     }
-    if (!methods.length && providerError) throw providerError;
     for (const method of methods) {
       const result = await admin.rpc('issue_checkout_shipping_quote', {
         // PostgreSQL accepts NULL UUID inputs; generated RPC types do not model that nullability.
@@ -221,8 +212,8 @@ export async function POST(request: Request) {
           }) => method
         ),
         quotedAt: new Date().toISOString(),
-        parcelBasis: methods.some((method) => method.source === 'internet_express')
-          ? 'Each item is quoted as one standard 35 × 25 × 15 cm, 2 kg parcel.'
+        parcelBasis: methods.some((method) => method.source === 'portador_diario')
+          ? `Portador Diário weight basis: ${parcels.reduce((total, parcel) => total + parcel.submitted_weight_kg, 0)} kg total (${parcels[0]?.submitted_weight_kg} kg per item).`
           : '',
       },
       { headers: { 'Cache-Control': 'private, no-store' } }
@@ -239,12 +230,12 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          error instanceof CourierError
+          error instanceof PortadorDiarioError
             ? error.message
             : 'Live delivery prices are temporarily unavailable. Please try again.',
       },
       {
-        status: error instanceof CourierError ? error.status : 503,
+        status: error instanceof PortadorDiarioError ? error.status : 503,
         headers: { 'Cache-Control': 'private, no-store' },
       }
     );

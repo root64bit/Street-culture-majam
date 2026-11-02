@@ -157,6 +157,23 @@ export async function POST(request: Request) {
         },
         { status: 409 }
       );
+    {
+      const { data: quote, error: quoteError } = await admin
+        .from('checkout_shipping_quotes')
+        .select('provider, consumed_order_id')
+        .eq('id', parsed.data.shipping_quote_id)
+        .eq('session_hash', sessionHash)
+        .maybeSingle();
+      if (quoteError) throw new Error('Shipping quotation is unavailable.');
+      // Do not create new orders with a pre-change South African
+      // courier quote. Preserve an identical retry of an already reserved order.
+      if (quote?.provider === 'internet_express' && quote.consumed_order_id !== orderId) {
+        return NextResponse.json(
+          { error: 'Delivery services changed. Refresh delivery options before paying.' },
+          { status: 409 }
+        );
+      }
+    }
     /* Idempotency, ownership, quote consumption and payload equality are checked
        inside the same database transaction, not a racy preflight SELECT. */
     const { data, error } = await admin.rpc('create_quoted_checkout_order', {

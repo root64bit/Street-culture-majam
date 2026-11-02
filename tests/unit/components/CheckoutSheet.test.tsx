@@ -188,7 +188,7 @@ describe('M-Pesa independent of delivery destination', () => {
   it('respects the disabled deployment flag for every destination', async () => {
     vi.stubEnv('NEXT_PUBLIC_MPESA_PAYMENTS_ENABLED', 'false');
     await paymentForDestination('ZA');
-    expect(screen.queryByRole('button', { name: /^M-Pesa / })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^M-Pesa / })).toBeDisabled();
     expect(screen.getByRole('button', { name: /^Card / })).toBeEnabled();
   });
 });
@@ -204,7 +204,9 @@ describe('Square disconnected while PayFast verification is pending', () => {
       'true'
     );
     expect(screen.getByLabelText('M-Pesa wallet number')).toHaveValue('+258841234567');
-    expect(screen.getByText(/Card and wallet payments are temporarily unavailable/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Card and wallet payments are temporarily unavailable/)
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /^Continue/ }));
     expect(screen.getByText('Ready when you are.')).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([url]) => url.includes('/api/payments/'))).toBe(false);
@@ -228,7 +230,7 @@ describe('Square disconnected while PayFast verification is pending', () => {
     vi.stubEnv('NEXT_PUBLIC_SQUARE_PAYMENTS_ENABLED', 'false');
     vi.stubEnv('NEXT_PUBLIC_MPESA_PAYMENTS_ENABLED', 'false');
     await paymentForDestination('GB');
-    expect(screen.queryByRole('button', { name: /^M-Pesa / })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^M-Pesa / })).toBeDisabled();
     expect(screen.queryByRole('button', { name: /^Card / })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Continue/ })).toBeDisabled();
     expect(screen.queryByText('Secure card form')).not.toBeInTheDocument();

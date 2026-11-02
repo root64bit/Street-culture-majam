@@ -474,7 +474,7 @@ type ShippingMethod = {
   provider_currency: 'ZAR' | 'MZN';
   estimated_min_days: number;
   estimated_max_days: number;
-  source: 'internet_express' | 'configured';
+  source: 'internet_express' | 'configured' | 'portador_diario';
 };
 
 const checkoutSteps: CheckoutStep[] = ['contact', 'delivery', 'payment', 'review'];
@@ -1619,8 +1619,9 @@ export function CheckoutSheet() {
                         <span>
                           <strong className="block text-sm">{method.name}</strong>
                           <span className="text-xs text-black/50">
-                            Estimated {method.estimated_min_days}–{method.estimated_max_days}{' '}
-                            business days
+                            {method.estimated_max_days > 0
+                              ? `Estimated ${method.estimated_min_days}–${method.estimated_max_days} business days`
+                              : 'Delivery timing confirmed by the store'}
                           </span>
                           {method.description && (
                             <span className="mt-1 block text-xs text-black/45">
@@ -1637,7 +1638,9 @@ export function CheckoutSheet() {
                   <p className="mt-3 text-[11px] leading-5 text-black/45">
                     {selectedShipping?.source === 'internet_express'
                       ? `Live Internet Express price, converted from ZAR to MZN. ${parcelBasis}`
-                      : 'Store-approved delivery or pickup price in MZN.'}
+                      : selectedShipping?.source === 'portador_diario'
+                        ? `Portador Diário national shipment price in MZN. ${parcelBasis}`
+                        : 'Store-approved delivery or pickup price in MZN.'}
                   </p>
                 )}
                 {addressComplete && !shippingLoading && (
@@ -1664,17 +1667,19 @@ export function CheckoutSheet() {
             </p>
             <h2 className="mt-2 text-3xl font-black tracking-[-0.05em]">Choose how to pay.</h2>
             <div className="mt-7 space-y-3">
-              {mpesaEnabled && (
+              {paymentProviderAllowed('mpesa') && (
                 <PaymentOption
-                  selected={paymentMethod === 'mpesa'}
-                  disabled={!mpesaEligible}
+                  selected={mpesaEnabled && paymentMethod === 'mpesa'}
+                  disabled={!mpesaEnabled || !mpesaEligible}
                   onClick={() => setPaymentMethod('mpesa')}
                   icon={<Smartphone className="h-5 w-5" />}
                   title="M-Pesa"
                   detail={
-                    mpesaEligible
-                      ? 'Mozambique M-Pesa number · Any delivery destination'
-                      : 'Unavailable for this amount · Contact support'
+                    !mpesaEnabled
+                      ? 'Temporarily unavailable · Contact support'
+                      : mpesaEligible
+                        ? 'Mozambique M-Pesa number · Any delivery destination'
+                        : 'Unavailable for this amount · Contact support'
                   }
                 />
               )}
@@ -2043,7 +2048,7 @@ export function CheckoutSheet() {
                 (step === 'delivery' && shippingLoading) ||
                 (step === 'payment' && !squareEnabled && (!mpesaEnabled || !mpesaEligible))
               }
-              className="flex h-13 flex-1 items-center justify-center gap-2 rounded-full bg-black text-xs font-bold uppercase tracking-[0.14em] text-white transition hover:bg-acid hover:text-black"
+              className="flex h-13 flex-1 items-center justify-center gap-2 rounded-full bg-black text-xs font-bold uppercase tracking-[0.14em] text-white transition hover:bg-acid hover:text-black disabled:cursor-not-allowed disabled:bg-black/10 disabled:text-black/40"
             >
               {step === 'delivery' && shippingLoading ? 'Getting courier prices' : 'Continue'}{' '}
               <ArrowRight className="h-4 w-4" />
