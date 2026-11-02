@@ -1,16 +1,12 @@
 import 'server-only';
 
-import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { assertExternalServicesAllowed } from '@/lib/external-services';
 import {
   PaymentGatewayUnavailableError,
-  PaymentOutcomeUnknownError,
   PaymentStatusUnavailableError,
-  type CreatePaymentInput,
   type ProviderPayment,
 } from '@/lib/payments/types';
-import { MPESA_MAX_TRANSACTION_MZN } from '@/lib/payments/mpesa-installments';
 
 const DEFAULT_BASE_URL = 'https://minescoop-mz.web.app/api/mpesa';
 // The merchant's API documentation allows up to 60 seconds for the gateway.
@@ -30,19 +26,7 @@ const statusResponseSchema = paymentResponseSchema.extend({
   transactionStatus: z.string().optional(),
 });
 
-export type MineScopeReferences = {
-  reference: string;
-  thirdPartyRef: string;
-};
-
-export function makeMineScopeReferences(idempotencyKey: string): MineScopeReferences {
-  const digest = createHash('sha256').update(idempotencyKey).digest('hex').toUpperCase();
-  return {
-    reference: `SC${digest.slice(0, 8)}`,
-    thirdPartyRef: `ST${digest.slice(8, 16)}`,
-  };
-}
-
+// Retained only for status reconciliation of historical STxxxxxxxx attempts.
 function getMineScopeBaseUrl() {
   assertExternalServicesAllowed();
   if (process.env.MPESA_PAYMENTS_ENABLED !== 'true') {
@@ -74,7 +58,7 @@ function getMineScopeBaseUrl() {
   return url.toString().replace(/\/$/, '');
 }
 
-async function post<T>(path: '/pay' | '/status', body: unknown, schema: z.ZodType<T>) {
+async function post<T>(path: '/status', body: unknown, schema: z.ZodType<T>) {
   const baseUrl = getMineScopeBaseUrl();
   let response: Response;
   try {
@@ -82,16 +66,13 @@ async function post<T>(path: '/pay' | '/status', body: unknown, schema: z.ZodTyp
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(body),
+      redirect: 'error',
       cache: 'no-store',
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch {
-    // A network timeout may happen after MineScope accepted the request. Keep
-    // the payment pending and query by the same thirdPartyRef; never retry /pay
-    // with a new reference automatically.
-    throw path === '/status'
-      ? new PaymentStatusUnavailableError()
-      : new PaymentOutcomeUnknownError();
+    // Historical attempts remain unresolved when the old provider is unavailable.
+    throw new PaymentStatusUnavailableError();
   }
 
   // Even a well-formed error response is not evidence that a wallet payment
@@ -101,79 +82,9 @@ async function post<T>(path: '/pay' | '/status', body: unknown, schema: z.ZodTyp
   const json = await response.json().catch(() => null);
   const parsed = schema.safeParse(json);
   if (!parsed.success) {
-    throw path === '/status'
-      ? new PaymentStatusUnavailableError()
-      : new PaymentOutcomeUnknownError();
+    throw new PaymentStatusUnavailableError();
   }
   return { response, data: parsed.data };
-}
-
-function normalizeMsisdn(phone: string) {
-  const normalized = phone.replace(/[\s()-]/g, '').replace(/^\+/, '');
-  if (!/^258(84|85)\d{7}$/.test(normalized)) {
-    throw new Error('Enter a valid Mozambique M-Pesa number, including country code 258.');
-  }
-  return normalized;
-}
-
-export async function initiateMineScopePayment(
-  input: CreatePaymentInput
-): Promise<ProviderPayment> {
-  if (
-    input.currency !== 'MZN' ||
-    !Number.isSafeInteger(input.amountMinor) ||
-    input.amountMinor <= 0
-  ) {
-    throw new Error('M-Pesa requires a positive MZN amount with at most two decimal places.');
-  }
-  if (!input.customerPhone) {
-    throw new Error('An M-Pesa phone number is required.');
-  }
-  if (input.amountMinor > MPESA_MAX_TRANSACTION_MZN * 100) {
-    throw new Error(`M-Pesa accepts at most ${MPESA_MAX_TRANSACTION_MZN} MZN per transaction.`);
-  }
-
-  const references = makeMineScopeReferences(input.idempotencyKey);
-  const { response, data } = await post(
-    '/pay',
-    {
-      amount: input.amountMinor / 100,
-      msisdn: normalizeMsisdn(input.customerPhone),
-      reference: references.reference,
-      thirdPartyRef: references.thirdPartyRef,
-    },
-    paymentResponseSchema
-  );
-
-  if (response.status >= 500) throw new PaymentOutcomeUnknownError();
-
-  if (!response.ok || !data.success) {
-    if (data.responseCode === 'INS-25' || data.responseCode === 'INS-9') {
-      // Duplicate/timeout responses are ambiguous; query the existing reference.
-      return {
-        provider: 'mpesa',
-        providerReference: references.thirdPartyRef,
-        status: 'PENDING',
-        providerTransactionId: data.transactionId ?? undefined,
-        conversationId: data.conversationId ?? undefined,
-        responseCode: data.responseCode,
-        responseDescription: data.responseDescription,
-      };
-    }
-    throw new Error(data.responseDescription || 'MineScope could not start the M-Pesa request.');
-  }
-
-  // "success" here means the push request was accepted, not that the customer
-  // entered a PIN or money reached the merchant.
-  return {
-    provider: 'mpesa',
-    providerReference: references.thirdPartyRef,
-    status: 'PENDING',
-    providerTransactionId: data.transactionId ?? undefined,
-    conversationId: data.conversationId ?? undefined,
-    responseCode: data.responseCode,
-    responseDescription: data.responseDescription,
-  };
 }
 
 export async function getMineScopePayment(providerReference: string): Promise<ProviderPayment> {

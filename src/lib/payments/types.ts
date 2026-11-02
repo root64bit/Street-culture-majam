@@ -1,4 +1,4 @@
-export type PaymentProviderName = 'mpesa' | 'square';
+export type PaymentProviderName = 'mpesa' | 'stripe' | 'square';
 export type PaymentStatus = 'PENDING' | 'PROCESSING' | 'PAID' | 'FAILED' | 'CANCELLED' | 'REFUNDED';
 
 export interface CreatePaymentInput {
@@ -18,6 +18,8 @@ export interface ProviderPayment {
   conversationId?: string;
   responseCode?: string;
   responseDescription?: string;
+  errorCode?: string;
+  rawHttpStatus?: number;
 }
 
 export interface PaymentGateway {

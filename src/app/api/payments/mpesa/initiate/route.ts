@@ -7,7 +7,7 @@ import {
   guestOrderCookieName,
   hashGuestOrderToken,
 } from '@/lib/payments/guest-checkout';
-import { makeMineScopeReferences } from '@/lib/payments/minescope';
+import { assertYakaReady, makeYakaPaymentRequest, makeYakaReferences } from '@/lib/payments/yaka';
 import { MpesaGateway } from '@/lib/payments/gateways';
 import { getMpesaInstallmentProgress } from '@/lib/payments/mpesa-installments';
 import { PaymentOutcomeUnknownError } from '@/lib/payments/types';
@@ -15,7 +15,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { moneyMinor, mpesaAmountEligible } from '@/lib/money';
 import { normalizeMpesaPhone } from '@/lib/payments/mpesa-phone';
 
-export const maxDuration = 75;
+export const maxDuration = 150;
 
 const requestSchema = z.object({
   order_id: z.string().uuid(),
@@ -174,14 +174,27 @@ export async function POST(request: Request) {
       );
     }
 
+    // Fail closed on a missing credential or unavailable durable gateway store,
+    // before creating an attempt. Existing attempts above remain status-only.
+    await assertYakaReady();
     const idempotencyKey = randomUUID();
-    const references = makeMineScopeReferences(idempotencyKey);
+    const references = makeYakaReferences(idempotencyKey);
+    const paymentInput = {
+      orderId: order.id,
+      amountMinor: moneyMinor(progress.nextInstallmentAmount),
+      currency: order.currency,
+      idempotencyKey,
+      customerPhone: walletPhone,
+    };
     const installmentMetadata = {
       payerPhone: walletPhone,
       installmentAmount: progress.nextInstallmentAmount,
       installmentNumber: progress.installmentNumber,
       installmentCount: progress.installmentCount,
       orderTotal: progress.totalAmount,
+      gateway: 'yaka-owned-v1',
+      environment: 'production',
+      request: makeYakaPaymentRequest(paymentInput),
     };
     const { data: payment, error: paymentError } = await admin
       .from('payments')
@@ -206,15 +219,10 @@ export async function POST(request: Request) {
     }
 
     try {
-      const result = await new MpesaGateway().createPayment({
-        orderId: order.id,
-        amountMinor: moneyMinor(progress.nextInstallmentAmount),
-        currency: order.currency,
-        idempotencyKey: payment.idempotency_key,
-        customerPhone: walletPhone,
-      });
+      if (payment.idempotency_key !== idempotencyKey) throw new PaymentOutcomeUnknownError();
+      const result = await new MpesaGateway().createPayment(paymentInput);
 
-      await admin
+      const { error: updateError } = await admin
         .from('payments')
         .update({
           provider_reference: result.providerReference,
@@ -225,47 +233,69 @@ export async function POST(request: Request) {
             conversationId: result.conversationId ?? null,
             responseCode: result.responseCode ?? null,
             responseDescription: result.responseDescription ?? null,
+            errorCode: result.errorCode ?? null,
+            rawHttpStatus: result.rawHttpStatus ?? null,
           },
-          status: 'REQUIRES_ACTION',
+          status: result.status === 'PENDING' ? 'REQUIRES_ACTION' : 'PENDING',
         })
-        .eq('id', payment.id);
+        .eq('id', payment.id)
+        .eq('status', 'PENDING');
+      if (updateError) throw new PaymentOutcomeUnknownError();
+      if (result.status === 'FAILED' || result.status === 'CANCELLED') {
+        const { error: failureError } = await admin.rpc('fail_guest_checkout_payment', {
+          target_payment_id: payment.id,
+        });
+        if (failureError) throw new PaymentOutcomeUnknownError();
+        return NextResponse.json(
+          {
+            orderId: order.id,
+            orderNumber: order.order_number,
+            paymentId: payment.id,
+            status: 'FAILED',
+            ...progress,
+            installmentAmount: progress.nextInstallmentAmount,
+            partial: progress.paidAmount > 0,
+            message:
+              'M-Pesa declined this request. No payment was marked complete. Earlier confirmed installments remain recorded.',
+          },
+          { status: 502 }
+        );
+      }
 
       return NextResponse.json(
         {
           orderId: order.id,
           orderNumber: order.order_number,
           paymentId: payment.id,
-          status: 'PENDING',
+          status: result.status === 'PENDING' ? 'PENDING' : 'PROCESSING',
           ...progress,
           installmentAmount: progress.nextInstallmentAmount,
           message:
-            progress.installmentCount > 1
-              ? `M-Pesa installment ${progress.installmentNumber} of ${progress.installmentCount} sent. Approve ${progress.nextInstallmentAmount.toLocaleString('en-US')} MZN on your phone.`
-              : 'M-Pesa request sent. Check your phone and approve it with your M-Pesa PIN.',
+            result.status !== 'PENDING'
+              ? 'The payment outcome is not confirmed. We are checking the same reference; do not send another payment.'
+              : progress.installmentCount > 1
+                ? `M-Pesa installment ${progress.installmentNumber} of ${progress.installmentCount} sent. Approve ${progress.nextInstallmentAmount.toLocaleString('en-US')} MZN on your phone.`
+                : 'M-Pesa request sent. Check your phone and approve it with your M-Pesa PIN.',
         },
         { status: 202 }
       );
-    } catch (error) {
-      const uncertain = error instanceof PaymentOutcomeUnknownError;
-      if (!uncertain) {
-        await admin.rpc('fail_guest_checkout_payment', { target_payment_id: payment.id });
-      }
+    } catch {
+      // The attempt exists and a debit may already have been submitted. Only an
+      // explicit final provider rejection above may release inventory. Database
+      // errors after acceptance are just as ambiguous as transport timeouts.
       return NextResponse.json(
         {
           orderId: order.id,
           orderNumber: order.order_number,
           paymentId: payment.id,
-          status: uncertain ? 'PROCESSING' : 'FAILED',
+          status: 'PROCESSING',
           ...progress,
           installmentAmount: progress.nextInstallmentAmount,
           partial: progress.paidAmount > 0,
-          message: uncertain
-            ? 'The request may have reached MineScope. We are checking the same reference; do not retry the payment yet.'
-            : progress.paidAmount > 0
-              ? 'This installment could not be started. Your earlier confirmed installments remain recorded; try this installment again.'
-              : 'MineScope could not start the payment request. No payment was marked complete.',
+          message:
+            'The request may have reached M-Pesa. We are checking the same reference; do not retry the payment yet.',
         },
-        { status: uncertain ? 202 : 502 }
+        { status: 202 }
       );
     }
   } catch {

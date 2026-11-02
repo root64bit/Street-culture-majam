@@ -96,6 +96,8 @@ describe('real checkout provider policy', () => {
     await reachPayment();
     expect(screen.queryByRole('button', { name: /Stripe/ })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Continue/ })).toBeDisabled();
+    expect(screen.getByText(/Online payments are temporarily unavailable/)).toBeInTheDocument();
+    expect(screen.queryByText(/You can pay with an eligible/)).not.toBeInTheDocument();
     expect(
       vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('/api/payments/'))
     ).toBe(false);

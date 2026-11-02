@@ -4,7 +4,7 @@ import {
   MPESA_MAX_TRANSACTION_MZN,
   splitMpesaAmount,
 } from '@/lib/payments/mpesa-installments';
-import { initiateMineScopePayment } from '@/lib/payments/minescope';
+import { makeYakaPaymentRequest, initiateYakaPayment } from '@/lib/payments/yaka';
 
 describe('M-Pesa installments', () => {
   it('keeps totals at or below the provider limit in one payment', () => {
@@ -13,6 +13,47 @@ describe('M-Pesa installments', () => {
 
   it('splits larger totals without exceeding 75,000 MZN', () => {
     expect(splitMpesaAmount(160_000)).toEqual([75_000, 75_000, 10_000]);
+  });
+
+  it('preserves centavos exactly across installments and remaining balances', () => {
+    expect(splitMpesaAmount(150000.35)).toEqual([75000, 75000, 0.35]);
+    expect(splitMpesaAmount(627.85)).toEqual([627.85]);
+    expect(
+      getMpesaInstallmentProgress(75000.35, [{ amount: 75000, status: 'SUCCEEDED' }])
+    ).toMatchObject({
+      paidAmount: 75000,
+      remainingAmount: 0.35,
+      nextInstallmentAmount: 0.35,
+      installmentCount: 2,
+    });
+    expect(
+      getMpesaInstallmentProgress(0.3, [
+        { amount: 0.1, status: 'SUCCEEDED' },
+        { amount: 0.2, status: 'SUCCEEDED' },
+      ]).remainingAmount
+    ).toBe(0);
+    expect(() => splitMpesaAmount(10.001)).toThrow();
+  });
+
+  it('sends exact two-decimal MZN strings without rounding', () => {
+    expect(
+      makeYakaPaymentRequest({
+        orderId: 'synthetic',
+        amountMinor: 62785,
+        currency: 'MZN',
+        idempotencyKey: 'centavos-test',
+        customerPhone: '258841234567',
+      }).amount
+    ).toBe('627.85');
+    expect(
+      makeYakaPaymentRequest({
+        orderId: 'synthetic',
+        amountMinor: 35,
+        currency: 'MZN',
+        idempotencyKey: 'centavos-test',
+        customerPhone: '258841234567',
+      }).amount
+    ).toBe('0.35');
   });
 
   it('calculates the next installment from provider-confirmed payments only', () => {
@@ -42,7 +83,7 @@ describe('M-Pesa installments', () => {
 
   it('refuses to send a provider request above the per-transaction limit', async () => {
     await expect(
-      initiateMineScopePayment({
+      initiateYakaPayment({
         orderId: 'order-test',
         amountMinor: (MPESA_MAX_TRANSACTION_MZN + 1) * 100,
         currency: 'MZN',

@@ -1740,8 +1740,9 @@ export function CheckoutSheet() {
                 className="mt-5 rounded-xl border border-black/10 bg-white p-3 text-xs leading-5 text-black/55"
                 role="status"
               >
-                Card and wallet payments are temporarily unavailable. You can pay with an eligible
-                Mozambique M-Pesa wallet.
+                {mpesaEnabled
+                  ? 'Card and wallet payments are temporarily unavailable. You can pay with an eligible Mozambique M-Pesa wallet.'
+                  : 'Online payments are temporarily unavailable. Contact support@streetculturevault.com for help with your order.'}
               </p>
             )}
           </div>

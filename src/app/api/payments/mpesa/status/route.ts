@@ -204,7 +204,7 @@ export async function POST(request: Request) {
     return json(
       {
         error:
-          'MineScope has not returned a final status yet. Check again; do not start a duplicate payment.',
+          'M-Pesa has not returned a final status yet. Check again; do not start a duplicate payment.',
       },
       202
     );
