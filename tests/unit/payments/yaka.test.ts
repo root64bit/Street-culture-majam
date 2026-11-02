@@ -249,4 +249,18 @@ describe('YAKA signed M-Pesa protocol', () => {
     expect((await new MpesaGateway().getPayment('ST1234ABCD')).status).toBe('PAID');
     expect(transport.mock.calls[0][0]).toBe('https://minescoop-mz.web.app/api/mpesa/status');
   });
+  it('keeps historical status reconciliation available with new payments disabled', async () => {
+    vi.stubEnv('MPESA_PAYMENTS_ENABLED', 'false');
+    transport.mockResolvedValue(
+      reply({ success: true, responseCode: 'INS-0', transactionStatus: 'Completed' })
+    );
+    expect((await new MpesaGateway().getPayment('ST1234ABCD')).status).toBe('PAID');
+    expect(transport.mock.calls[0][0]).toMatch(/\/api\/mpesa\/status$/);
+  });
+  it('keeps signed status reconciliation available with new payments disabled', async () => {
+    vi.stubEnv('MPESA_PAYMENTS_ENABLED', 'false');
+    transport.mockResolvedValue(reply(completed));
+    expect((await new MpesaGateway().getPayment(reference)).status).toBe('PAID');
+    expect(transport.mock.calls[0][0]).toMatch(/\/v1\/transactions\/status$/);
+  });
 });

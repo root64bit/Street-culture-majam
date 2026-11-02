@@ -10,7 +10,7 @@ const root = process.cwd(), folder = resolve('outputs/mpesa-yaka-release/2026110
 const baseline = 'dpl_HBZ45WL4N4yE8MvDj5vPchj9KJka';
 const previous = JSON.parse(readFileSync('outputs/stripe-disconnect-release/20261030/source.json', 'utf8'));
 const stage = join(tmpdir(), 'street-culture-yaka-mpesa-20261102');
-const appFiles = ['src/lib/payments/yaka.ts', 'src/lib/payments/minescope.ts', 'src/lib/payments/gateways.ts', 'src/lib/payments/types.ts', 'src/app/api/payments/mpesa/initiate/route.ts', 'src/app/api/payments/mpesa/status/route.ts', 'src/components/commerce/CommerceOverlays.tsx', 'tsconfig.json'];
+const appFiles = ['src/lib/payments/yaka.ts', 'src/lib/payments/minescope.ts', 'src/lib/payments/gateways.ts', 'src/lib/payments/types.ts', 'src/app/api/payments/mpesa/initiate/route.ts', 'src/app/api/payments/mpesa/status/route.ts', 'src/components/commerce/CommerceOverlays.tsx', 'src/app/api/cron/payments/route.ts', 'tsconfig.json'];
 const tests = ['tests/unit/payments/yaka.test.ts', 'tests/unit/payments/mpesa-initiate.test.ts', 'tests/unit/payments/mpesa-status.test.ts', 'tests/unit/payments/mpesa-installments.test.ts', 'tests/unit/payments/minescope-status.test.ts', 'tests/unit/payments/mpesa-phone.test.ts', 'tests/unit/payments/provider-policy.test.ts', 'tests/unit/components/CheckoutSheet.test.tsx', 'tests/unit/components/CheckoutProviderPolicy.test.tsx'];
 const files = [...appFiles, ...tests, '.env.example', 'docs/mpesa-installments.md'];
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -66,6 +66,7 @@ try {
     console.log(JSON.stringify({ stage, applicationFiles: appFiles.length, databaseChanges: false }));
   } else if (action === 'check') {
     assertSource();
+    save('checks.json', { tests: 'RUNNING', typescript: 'PENDING', lint: 'PENDING' });
     check('scoped-tests', [resolve('node_modules/vitest/vitest.mjs'), 'run', ...tests]);
     check('scoped-typescript', [resolve('node_modules/typescript/bin/tsc'), '--noEmit']);
     check('scoped-lint', [resolve('node_modules/eslint/bin/eslint.js'), ...appFiles.filter(x => /\.tsx?$/.test(x)), ...tests]);

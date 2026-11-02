@@ -55,7 +55,6 @@ function configuration() {
   const secret = process.env.MPESA_GATEWAY_SHARED_SECRET?.trim();
   const timeout = Number(process.env.MPESA_GATEWAY_REQUEST_TIMEOUT_MS || 20000);
   if (
-    process.env.MPESA_PAYMENTS_ENABLED !== 'true' ||
     process.env.MPESA_GATEWAY_URL !== ORIGIN ||
     process.env.MPESA_GATEWAY_EXPECTED_HOST !== HOST ||
     process.env.MPESA_GATEWAY_ENV !== ENVIRONMENT ||
@@ -158,6 +157,9 @@ export async function assertYakaReady() {
 
 export async function initiateYakaPayment(input: CreatePaymentInput): Promise<ProviderPayment> {
   const request = makeYakaPaymentRequest(input);
+  if (process.env.MPESA_PAYMENTS_ENABLED !== 'true') {
+    throw new PaymentGatewayUnavailableError('M-Pesa payments are not enabled for this store.');
+  }
   const { response, payload } = await post(initiationPath, request);
   const parsed = initiationSchema.safeParse(payload);
   if (!parsed.success || parsed.data.data.thirdPartyReference !== request.thirdPartyReference) {

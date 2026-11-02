@@ -17,7 +17,8 @@ export async function GET(request: Request) {
   )
     return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
   const providers = [
-    ...(process.env.MPESA_PAYMENTS_ENABLED === 'true' ? ['mpesa'] : []),
+    // Checkout flags control new debits, not reconciliation of saved attempts.
+    'mpesa',
     ...(paymentProviderAllowed('square') && process.env.SQUARE_PAYMENTS_ENABLED === 'true'
       ? ['square']
       : []),

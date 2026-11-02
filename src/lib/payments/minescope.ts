@@ -29,10 +29,6 @@ const statusResponseSchema = paymentResponseSchema.extend({
 // Retained only for status reconciliation of historical STxxxxxxxx attempts.
 function getMineScopeBaseUrl() {
   assertExternalServicesAllowed();
-  if (process.env.MPESA_PAYMENTS_ENABLED !== 'true') {
-    throw new PaymentGatewayUnavailableError('M-Pesa payments are not enabled for this store.');
-  }
-
   const configured = process.env.MPESA_GATEWAY_BASE_URL || DEFAULT_BASE_URL;
   let url: URL;
   try {
