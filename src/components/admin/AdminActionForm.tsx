@@ -8,11 +8,13 @@ export function AdminActionForm({
   actions,
   fields = [],
   label = 'Record action',
+  payload = {},
 }: {
   endpoint: string;
   actions: { value: string; label: string }[];
   fields?: FormField[];
   label?: string;
+  payload?: Record<string, string | string[]>;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -22,7 +24,11 @@ export function AdminActionForm({
     setBusy(true);
     setMessage('');
     const form = new FormData(event.currentTarget);
-    const body: Record<string, unknown> = { action: form.get('action'), note: form.get('note') };
+    const body: Record<string, unknown> = {
+      ...payload,
+      action: form.get('action'),
+      note: form.get('note'),
+    };
     for (const field of fields)
       body[field.name] =
         field.type === 'number' ? Number(form.get(field.name)) : (form.get(field.name) ?? '');

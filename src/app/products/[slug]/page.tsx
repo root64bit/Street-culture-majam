@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { cache } from 'react';
 import { ProductPurchasePanel } from '@/components/catalog/ProductPurchasePanel';
+import { ProductAdminLink } from '@/components/catalog/ProductAdminLink';
 import { getProductBySlug, getRelatedProducts } from '@/services/catalog.service';
 
 const getProduct = cache(getProductBySlug);
@@ -75,6 +76,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
           __html: JSON.stringify(structuredData).replace(/</g, '\\u003c'),
         }}
       />
+      <ProductAdminLink productId={product.id} />
       <ProductPurchasePanel
         productId={product.id}
         name={product.name}

@@ -2,15 +2,20 @@ import 'server-only';
 
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
+import { assertExternalServicesAllowed } from '@/lib/external-services';
 import {
   PaymentGatewayUnavailableError,
   PaymentOutcomeUnknownError,
+  PaymentStatusUnavailableError,
   type CreatePaymentInput,
   type ProviderPayment,
 } from '@/lib/payments/types';
+import { MPESA_MAX_TRANSACTION_MZN } from '@/lib/payments/mpesa-installments';
 
 const DEFAULT_BASE_URL = 'https://minescoop-mz.web.app/api/mpesa';
-const REQUEST_TIMEOUT_MS = 20_000;
+// The merchant's API documentation allows up to 60 seconds for the gateway.
+// Route deadlines include a buffer for persisting/querying the same reference.
+const REQUEST_TIMEOUT_MS = 60_000;
 
 const paymentResponseSchema = z.object({
   success: z.boolean(),
@@ -39,6 +44,7 @@ export function makeMineScopeReferences(idempotencyKey: string): MineScopeRefere
 }
 
 function getMineScopeBaseUrl() {
+  assertExternalServicesAllowed();
   if (process.env.MPESA_PAYMENTS_ENABLED !== 'true') {
     throw new PaymentGatewayUnavailableError('M-Pesa payments are not enabled for this store.');
   }
@@ -60,7 +66,9 @@ function getMineScopeBaseUrl() {
     url.search ||
     url.hash
   ) {
-    throw new PaymentGatewayUnavailableError('The MineScope gateway URL is not an approved endpoint.');
+    throw new PaymentGatewayUnavailableError(
+      'The MineScope gateway URL is not an approved endpoint.'
+    );
   }
 
   return url.toString().replace(/\/$/, '');
@@ -81,13 +89,21 @@ async function post<T>(path: '/pay' | '/status', body: unknown, schema: z.ZodTyp
     // A network timeout may happen after MineScope accepted the request. Keep
     // the payment pending and query by the same thirdPartyRef; never retry /pay
     // with a new reference automatically.
-    throw new PaymentOutcomeUnknownError();
+    throw path === '/status'
+      ? new PaymentStatusUnavailableError()
+      : new PaymentOutcomeUnknownError();
   }
+
+  // Even a well-formed error response is not evidence that a wallet payment
+  // failed. Never release inventory or allow another push on a gateway outage.
+  if (path === '/status' && response.status >= 500) throw new PaymentStatusUnavailableError();
 
   const json = await response.json().catch(() => null);
   const parsed = schema.safeParse(json);
   if (!parsed.success) {
-    throw new PaymentOutcomeUnknownError();
+    throw path === '/status'
+      ? new PaymentStatusUnavailableError()
+      : new PaymentOutcomeUnknownError();
   }
   return { response, data: parsed.data };
 }
@@ -100,21 +116,34 @@ function normalizeMsisdn(phone: string) {
   return normalized;
 }
 
-export async function initiateMineScopePayment(input: CreatePaymentInput): Promise<ProviderPayment> {
-  if (input.currency !== 'MZN' || !Number.isInteger(input.amountMinor) || input.amountMinor <= 0 || input.amountMinor % 100 !== 0) {
-    throw new Error('M-Pesa requires a positive whole-MZN order amount.');
+export async function initiateMineScopePayment(
+  input: CreatePaymentInput
+): Promise<ProviderPayment> {
+  if (
+    input.currency !== 'MZN' ||
+    !Number.isSafeInteger(input.amountMinor) ||
+    input.amountMinor <= 0
+  ) {
+    throw new Error('M-Pesa requires a positive MZN amount with at most two decimal places.');
   }
   if (!input.customerPhone) {
     throw new Error('An M-Pesa phone number is required.');
   }
+  if (input.amountMinor > MPESA_MAX_TRANSACTION_MZN * 100) {
+    throw new Error(`M-Pesa accepts at most ${MPESA_MAX_TRANSACTION_MZN} MZN per transaction.`);
+  }
 
   const references = makeMineScopeReferences(input.idempotencyKey);
-  const { response, data } = await post('/pay', {
-    amount: input.amountMinor / 100,
-    msisdn: normalizeMsisdn(input.customerPhone),
-    reference: references.reference,
-    thirdPartyRef: references.thirdPartyRef,
-  }, paymentResponseSchema);
+  const { response, data } = await post(
+    '/pay',
+    {
+      amount: input.amountMinor / 100,
+      msisdn: normalizeMsisdn(input.customerPhone),
+      reference: references.reference,
+      thirdPartyRef: references.thirdPartyRef,
+    },
+    paymentResponseSchema
+  );
 
   if (response.status >= 500) throw new PaymentOutcomeUnknownError();
 
@@ -152,20 +181,32 @@ export async function getMineScopePayment(providerReference: string): Promise<Pr
     throw new Error('The MineScope payment reference is invalid.');
   }
 
-  const { response, data } = await post('/status', {
-    queryRef: providerReference,
-    thirdPartyRef: providerReference,
-  }, statusResponseSchema);
+  const { response, data } = await post(
+    '/status',
+    {
+      queryRef: providerReference,
+      thirdPartyRef: providerReference,
+    },
+    statusResponseSchema
+  );
 
   if (!response.ok && !data.responseCode) {
-    throw new Error('MineScope could not return the payment status.');
+    throw new PaymentStatusUnavailableError();
   }
 
   const transactionStatus = data.transactionStatus?.trim().toLowerCase();
   let status: ProviderPayment['status'] = 'PENDING';
-  if (response.ok && data.success && data.responseCode === 'INS-0' && transactionStatus === 'completed') {
+  if (
+    response.ok &&
+    data.success &&
+    data.responseCode === 'INS-0' &&
+    transactionStatus === 'completed'
+  ) {
     status = 'PAID';
-  } else if (['cancelled', 'canceled'].includes(transactionStatus ?? '') || data.responseCode === 'INS-5') {
+  } else if (
+    ['cancelled', 'canceled'].includes(transactionStatus ?? '') ||
+    data.responseCode === 'INS-5'
+  ) {
     status = 'CANCELLED';
   } else if (['failed', 'rejected'].includes(transactionStatus ?? '')) {
     status = 'FAILED';

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { ArrowLeft, ArrowRight, SlidersHorizontal, X } from 'lucide-react';
 import { CatalogResults } from '@/components/catalog/CatalogResults';
+import { catalogSizeValue, formatProductSize, parseCatalogSize } from '@/lib/product-sizes';
 import {
   catalogProductToStoreProduct,
   getCatalogFacets,
@@ -98,14 +99,19 @@ function FilterFields({
         Size
         <select
           name="size"
-          defaultValue={filters.size ?? ''}
+          defaultValue={filters.size ? catalogSizeValue(filters.size, filters.sizeSystem) : ''}
           className="mt-2 h-12 w-full rounded-xl border border-black/10 bg-white px-3 text-sm font-normal normal-case tracking-normal"
         >
           <option value="">All sizes</option>
+          {filters.size && !filters.sizeSystem && (
+            <option value={filters.size}>{filters.size} (all sizing systems)</option>
+          )}
           {facets.sizes.map((size) => (
-            <option key={`${size.system}-${size.value}`} value={size.value}>
-              {size.system ? `${size.system} ` : ''}
-              {size.value} ({size.count})
+            <option
+              key={`${size.system}-${size.value}`}
+              value={catalogSizeValue(size.value, size.system)}
+            >
+              {formatProductSize(size.value, size.system)} ({size.count})
             </option>
           ))}
         </select>
@@ -193,7 +199,7 @@ export async function CatalogPage({
   const filters: CatalogFilters = {
     category: (fixedCategory ?? value(searchParams, 'category')) || undefined,
     brand: (fixedBrand ?? value(searchParams, 'brand')) || undefined,
-    size: value(searchParams, 'size') || undefined,
+    ...parseCatalogSize(value(searchParams, 'size')),
     condition: value(searchParams, 'condition') || undefined,
     minPrice: price(value(searchParams, 'min')),
     maxPrice: price(value(searchParams, 'max')),

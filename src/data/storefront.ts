@@ -3,6 +3,7 @@ export type ProductCategory = string;
 export interface StoreListingOption {
   listingId: string;
   size: string;
+  sizeSystem?: string;
   price: number;
   condition: string;
 }
@@ -20,6 +21,7 @@ export interface StoreProduct {
   price: number;
   condition: string;
   sizes: string[];
+  sizeSystem?: string;
   ownershipType?: string;
   authenticationStatus?: string;
   listingOptions?: StoreListingOption[];

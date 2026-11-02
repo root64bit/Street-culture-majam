@@ -19,12 +19,9 @@ export function OrderFulfillmentActions({
   if (status === 'PROCESSING' && fulfillment === 'UNFULFILLED')
     actions.push({ value: 'MARK_PACKED', label: 'Mark packed' });
   if (['PROCESSING', 'PACKED'].includes(status) && fulfillment === 'PACKED')
-    actions.push(
-      pickup
-        ? { value: 'MARK_READY_FOR_PICKUP', label: 'Mark ready for pickup' }
-        : { value: 'MARK_SHIPPED', label: 'Mark shipped' }
-    );
+    if (pickup) actions.push({ value: 'MARK_READY_FOR_PICKUP', label: 'Mark ready for pickup' });
   if (
+    pickup &&
     ['SHIPPED', 'READY_FOR_PICKUP'].includes(status) &&
     ['SHIPPED', 'READY_FOR_PICKUP'].includes(fulfillment)
   )

@@ -18,8 +18,9 @@ export interface NotificationProvider {
   dispatch(notification: TransactionalNotification): Promise<{ delivered: boolean }>;
 }
 
-// No email/SMS vendor has been approved. This provider records intent only in
-// local development and never claims delivery to a customer.
+// Order email intents are created transactionally by the order outbox trigger.
+// Delivery is a separate opt-in worker; this legacy interface never sends or
+// claims delivery during payment finalization.
 export const notificationProvider: NotificationProvider = {
   async dispatch(notification) {
     if (process.env.NODE_ENV !== 'production') {

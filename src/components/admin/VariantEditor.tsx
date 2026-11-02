@@ -1,6 +1,7 @@
 'use client';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { ProductSizeFields } from '@/components/ui/ProductSizeFields';
 type Variant = {
   id: string;
   size: string;
@@ -14,6 +15,8 @@ export function VariantEditor({ productId, variant }: { productId: string; varia
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [size, setSize] = useState(variant.size);
+  const [system, setSystem] = useState(variant.size_system);
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
@@ -79,8 +82,14 @@ export function VariantEditor({ productId, variant }: { productId: string; varia
         onSubmit={submit}
         className="mt-3 grid gap-3 rounded-xl bg-[#f7faf5] p-4 sm:grid-cols-2"
       >
+        <ProductSizeFields
+          size={size}
+          system={system}
+          onSizeChange={setSize}
+          onSystemChange={setSystem}
+          systemName="system"
+        />
         {[
-          { name: 'size', label: 'Size', value: variant.size },
           { name: 'sku', label: 'SKU', value: variant.sku ?? '' },
           { name: 'color', label: 'Color', value: variant.color ?? '' },
         ].map((v) => (
@@ -95,18 +104,6 @@ export function VariantEditor({ productId, variant }: { productId: string; varia
             />
           </label>
         ))}
-        <label className="text-xs font-bold text-[#61766b]">
-          System
-          <select
-            name="system"
-            defaultValue={variant.size_system}
-            className="mt-1 block w-full rounded-lg border border-[#dce6dc] bg-white p-2 text-sm"
-          >
-            {['US', 'UK', 'EU', 'CM', 'STANDARD'].map((v) => (
-              <option key={v}>{v}</option>
-            ))}
-          </select>
-        </label>
         <label className="text-xs font-bold text-[#61766b]">
           Future inventory price hint (MZN)
           <input

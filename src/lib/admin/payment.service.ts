@@ -2,6 +2,7 @@ import 'server-only';
 import { MpesaGateway } from '@/lib/payments/gateways';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Json } from '@/types/database.types';
+import { reconcileSquarePayment } from '@/lib/payments/square-reconciliation';
 
 export async function reconcilePayment(id: string, operatorId: string | null) {
   const admin = createAdminClient();
@@ -10,13 +11,10 @@ export async function reconcilePayment(id: string, operatorId: string | null) {
     .select('id,provider,status,provider_reference,provider_payload')
     .eq('id', id)
     .maybeSingle();
-  if (
-    payment.error ||
-    !payment.data ||
-    payment.data.provider !== 'mpesa' ||
-    payment.data.status === 'REFUNDED'
-  )
+  if (payment.error || !payment.data || payment.data.status === 'REFUNDED')
     throw new Error('Payment is not eligible for reconciliation.');
+  if (payment.data.provider === 'square') return reconcileSquarePayment(id);
+  if (payment.data.provider !== 'mpesa') throw new Error('Unsupported payment provider.');
   const payload = payment.data.provider_payload;
   const metadata: Record<string, Json | undefined> =
     payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};

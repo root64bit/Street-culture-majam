@@ -2,6 +2,9 @@
 
 import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import { ProductSizeFields } from '@/components/ui/ProductSizeFields';
+import type { ProductSizeSystem } from '@/lib/product-sizes';
+import { emptyPrivateCost, PrivateCostFields, privateCostPayload } from './PrivateCostFields';
 
 export type StockDraft = {
   id: string;
@@ -23,18 +26,22 @@ export function StockDraftForm({
   initialStock,
   productArchived,
   canAuthenticate = false,
+  canSetPrivateCost = false,
 }: {
   productId: string;
   initialStock: StockDraft[];
   productArchived: boolean;
   canAuthenticate?: boolean;
+  canSetPrivateCost?: boolean;
 }) {
   const router = useRouter();
   const [stock, setStock] = useState(initialStock);
   const [size, setSize] = useState('');
-  const [sizeSystem, setSizeSystem] = useState<'US' | 'UK' | 'EU' | 'CM' | 'STANDARD'>('STANDARD');
+  const [sizeSystem, setSizeSystem] = useState<ProductSizeSystem>('UK');
   const [condition, setCondition] = useState<'NEW' | 'LIKE_NEW' | 'GOOD' | 'FAIR'>('NEW');
   const [price, setPrice] = useState('');
+  const [recordCost, setRecordCost] = useState(false);
+  const [cost, setCost] = useState(emptyPrivateCost);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -53,9 +60,7 @@ export function StockDraftForm({
     try {
       const noteText = (notes[item.id] ?? '').trim();
       const decisionNotes =
-        noteText.length >= 20
-          ? noteText
-          : 'Authenticated store stock approved for public listing.';
+        noteText.length >= 20 ? noteText : 'Authenticated store stock approved for public listing.';
       const response = await fetch(`/api/admin/listings/${item.id}/publication`, {
         method: publish ? 'POST' : 'DELETE',
         headers: { 'Content-Type': 'application/json' },
@@ -93,7 +98,13 @@ export function StockDraftForm({
       const response = await fetch(`/api/admin/products/${productId}/listings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ size, sizeSystem, condition, askingPrice }),
+        body: JSON.stringify({
+          size,
+          sizeSystem,
+          condition,
+          askingPrice,
+          ...(recordCost && canSetPrivateCost ? { costPrice: privateCostPayload(cost) } : {}),
+        }),
       });
       const result = (await response.json()) as { listingId?: string; error?: string };
       if (!response.ok || !result.listingId)
@@ -113,6 +124,8 @@ export function StockDraftForm({
       ]);
       setSize('');
       setPrice('');
+      setRecordCost(false);
+      setCost(emptyPrivateCost);
       setSuccess('Inventory draft saved. It is not published or authenticated.');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not save inventory draft.');
@@ -165,8 +178,7 @@ export function StockDraftForm({
                   <label className="mt-3 flex items-start gap-2 text-xs text-black/60">
                     <input
                       type="checkbox"
-                      defaultChecked
-                      checked={confirmed[item.id] !== false}
+                      checked={confirmed[item.id] === true}
                       onChange={(event) =>
                         setConfirmed((current) => ({ ...current, [item.id]: event.target.checked }))
                       }
@@ -176,7 +188,7 @@ export function StockDraftForm({
                   <button
                     type="button"
                     onClick={() => void changePublication(item, true)}
-                    disabled={busy}
+                    disabled={busy || confirmed[item.id] !== true}
                     className="mt-3 rounded-full bg-[#065f46] px-6 py-2.5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-[#087a5a] disabled:opacity-50"
                   >
                     {busy ? 'Publishing…' : 'Authenticate & Publish to Store'}
@@ -200,31 +212,12 @@ export function StockDraftForm({
 
       {!productArchived && (
         <form onSubmit={submit} className="mt-7 grid gap-4 sm:grid-cols-2">
-          <label className={`space-y-2 ${label}`}>
-            Size *
-            <input
-              className={field}
-              value={size}
-              onChange={(event) => setSize(event.target.value)}
-              maxLength={24}
-              required
-              placeholder="e.g. OS, EU 38, 10.5"
-            />
-          </label>
-          <label className={`space-y-2 ${label}`}>
-            Size system *
-            <select
-              className={field}
-              value={sizeSystem}
-              onChange={(event) => setSizeSystem(event.target.value as typeof sizeSystem)}
-            >
-              <option value="STANDARD">Standard / one size</option>
-              <option value="US">US</option>
-              <option value="UK">UK</option>
-              <option value="EU">EU</option>
-              <option value="CM">CM</option>
-            </select>
-          </label>
+          <ProductSizeFields
+            size={size}
+            system={sizeSystem}
+            onSizeChange={setSize}
+            onSystemChange={setSizeSystem}
+          />
           <label className={`space-y-2 ${label}`}>
             Condition *
             <select
@@ -251,6 +244,26 @@ export function StockDraftForm({
               required
             />
           </label>
+          {canSetPrivateCost && (
+            <div className="space-y-3 rounded-xl bg-emerald-50 p-4 sm:col-span-2">
+              <label className="flex items-center gap-2 text-sm font-bold">
+                <input
+                  type="checkbox"
+                  checked={recordCost}
+                  onChange={(event) => setRecordCost(event.target.checked)}
+                />
+                Record private purchase cost
+              </label>
+              {recordCost ? (
+                <PrivateCostFields value={cost} onChange={setCost} />
+              ) : (
+                <p className="text-xs text-neutral-600">
+                  Optional. Add the cost now or later in this product’s Listings tab. Unknown costs
+                  do not count as zero profit inputs.
+                </p>
+              )}
+            </div>
+          )}
           <button
             type="submit"
             disabled={busy}

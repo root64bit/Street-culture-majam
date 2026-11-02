@@ -21,7 +21,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     );
     return adminFailure(
       'PROVIDER_UNAVAILABLE',
-      'MineScope did not return a reliable result, or the payment is not eligible. Payment state remains unchanged; review its reference and retry.',
+      'The payment provider did not return a reliable result, or the payment is not eligible. Check its reference and try again.',
       503
     );
   }

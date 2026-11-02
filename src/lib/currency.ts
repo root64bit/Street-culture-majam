@@ -1,3 +1,5 @@
+import { convertedMinor } from '@/lib/money';
+import { assertExternalServicesAllowed } from '@/lib/external-services';
 export const SUPPORTED_CURRENCIES = ['MZN', 'EUR', 'ZAR', 'USD', 'GBP'] as const;
 
 export type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number];
@@ -50,6 +52,7 @@ export function suggestDisplayCurrency(country: string | null): SupportedCurrenc
 }
 
 export async function fetchMznExchangeRates(): Promise<MznRateSnapshot> {
+  assertExternalServicesAllowed();
   const response = await fetch('https://open.er-api.com/v6/latest/MZN', {
     next: { revalidate: 86_400 },
     signal: AbortSignal.timeout(5_000),
@@ -69,6 +72,7 @@ export async function fetchMznExchangeRates(): Promise<MznRateSnapshot> {
     data.result !== 'success' ||
     data.base_code !== 'MZN' ||
     !timestamp ||
+    timestamp > Date.now() / 1000 + 300 ||
     Date.now() / 1000 - timestamp > 3 * 86_400 ||
     SUPPORTED_CURRENCIES.some(
       (currency) => !Number.isFinite(rates[currency]) || rates[currency] <= 0
@@ -97,6 +101,11 @@ export function convertToMzn(
 ): number | null {
   const rate = sourceToMznRate(currency, rates);
   if (!rate || !Number.isFinite(amount)) return null;
-  const converted = Math.round((amount * rate + Number.EPSILON) * 100) / 100;
-  return converted > 0 && converted <= 9_999_999_999.99 ? converted : null;
+  try {
+    const converted =
+      convertedMinor(amount, currency === 'MZN' ? 1 : rates[currency]!, currency !== 'MZN') / 100;
+    return converted > 0 ? converted : null;
+  } catch {
+    return null;
+  }
 }

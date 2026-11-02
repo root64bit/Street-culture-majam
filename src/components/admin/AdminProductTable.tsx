@@ -183,24 +183,37 @@ export function AdminProductTable({
                 </td>
                 <td className="px-4 py-4">
                   <div className="flex min-w-64 items-center gap-3">
-                    {product.image_url ? (
-                      <Image
-                        src={product.image_url}
-                        alt={`${product.name} product image`}
-                        width={50}
-                        height={50}
-                        unoptimized
-                        className="h-[50px] w-[50px] rounded-lg bg-[#f1f5ed] object-contain"
-                      />
-                    ) : (
-                      <div className="h-[50px] w-[50px] rounded-lg bg-[#f1f5ed]" />
-                    )}
                     <Link
-                      href={`/admin/products/${product.id}`}
-                      className="font-bold text-[#154b34] hover:underline"
+                      href={`/admin/products/${product.id}?tab=all`}
+                      aria-label={`Open ${product.name}`}
                     >
-                      {product.name}
+                      {product.image_url ? (
+                        <Image
+                          src={product.image_url}
+                          alt={`${product.name} product image`}
+                          width={50}
+                          height={50}
+                          unoptimized
+                          className="h-[50px] w-[50px] rounded-lg bg-[#f1f5ed] object-contain"
+                        />
+                      ) : (
+                        <div className="h-[50px] w-[50px] rounded-lg bg-[#f1f5ed]" />
+                      )}
                     </Link>
+                    <div>
+                      <Link
+                        href={`/admin/products/${product.id}?tab=all`}
+                        className="font-bold text-[#154b34] hover:underline"
+                      >
+                        {product.name}
+                      </Link>
+                      <Link
+                        href={`/admin/products/${product.id}?tab=all`}
+                        className="mt-2 block text-xs font-semibold text-[#065f46] underline underline-offset-4"
+                      >
+                        {manage ? 'Edit product' : 'View product details'}
+                      </Link>
+                    </div>
                   </div>
                 </td>
                 <td className="px-4 py-4 text-xs">

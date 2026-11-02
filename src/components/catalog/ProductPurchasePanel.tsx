@@ -18,6 +18,9 @@ import type { StoreProduct } from '@/data/storefront';
 import { useCommerce } from '@/features/commerce/CommerceProvider';
 import { DisplayPrice } from '@/features/currency/CurrencyProvider';
 import { useWishlist } from '@/features/commerce/useWishlist';
+import { formatProductSize, isFootwearProduct } from '@/lib/product-sizes';
+import { purchasableOptions } from '@/lib/commerce/purchase-options';
+import { AvailableSizeSelect } from '@/components/catalog/AvailableSizeSelect';
 
 type ProductImage = { id: string; src: string; alt: string };
 
@@ -48,11 +51,14 @@ export function ProductPurchasePanel({
   listings: StoreProduct[];
   related: StoreProduct[];
 }) {
-  const [selectedId, setSelectedId] = useState(listings[0]?.listingId ?? '');
+  const availableListings = listings.filter((listing) => purchasableOptions(listing).length > 0);
+  const options = availableListings.flatMap(purchasableOptions);
+  const [selectedId, setSelectedId] = useState(options.length === 1 ? options[0].listingId : '');
   const [activeImage, setActiveImage] = useState(0);
   const [viewerOpen, setViewerOpen] = useState(false);
   const [shareStatus, setShareStatus] = useState('');
-  const selected = listings.find((listing) => listing.listingId === selectedId);
+  const selected = availableListings.find((listing) => listing.listingId === selectedId);
+  const needsSizeConfirmation = listings.length > 0 && isFootwearProduct(category, name) && !options.length;
   const gallery = images.length
     ? images
     : [{ id: 'fallback', src: '/images/street-culture-products.png', alt: name }];
@@ -145,42 +151,18 @@ export function ProductPurchasePanel({
               {model ? ` · ${model}` : ''}
             </p>
             <p className="mt-6 text-3xl font-black">
-              {selected ? <DisplayPrice amount={selected.price} /> : 'Currently unavailable'}
+              {selected ? <DisplayPrice amount={selected.price} /> : options.length ? 'Choose a size to see its price' : needsSizeConfirmation ? 'Size confirmation needed' : 'Currently unavailable'}
             </p>
 
-            {listings.length > 0 ? (
+            {options.length > 0 ? (
               <>
                 <div className="mt-8 flex items-end justify-between gap-4">
                   <h2 className="text-xs font-bold uppercase tracking-wider">
-                    Choose your exact piece
+                    Choose your size
                   </h2>
-                  <span className="text-xs text-black/45">{listings.length} available</span>
+                  <span className="text-xs text-black/45">{options.length} available pieces</span>
                 </div>
-                <div
-                  className="mt-3 grid gap-2 sm:grid-cols-2"
-                  role="radiogroup"
-                  aria-label="Available listings"
-                >
-                  {listings.map((listing) => (
-                    <button
-                      key={listing.listingId}
-                      type="button"
-                      role="radio"
-                      aria-checked={selectedId === listing.listingId}
-                      onClick={() => setSelectedId(listing.listingId ?? '')}
-                      className={`rounded-2xl border p-4 text-left transition ${selectedId === listing.listingId ? 'border-black bg-black text-white' : 'border-black/15 bg-white hover:border-black'}`}
-                    >
-                      <span className="block text-sm font-bold">Size {listing.sizes[0]}</span>
-                      <span className="mt-1 block text-xs opacity-70">
-                        {listing.condition} ·{' '}
-                        {listing.ownershipType === 'STREET_CULTURE' ? 'Store stock' : 'Consignment'}
-                      </span>
-                      <span className="mt-2 block text-sm font-black">
-                        <DisplayPrice amount={listing.price} />
-                      </span>
-                    </button>
-                  ))}
-                </div>
+                <AvailableSizeSelect options={options} value={selectedId} onChange={setSelectedId} />
                 <div className="mt-6 grid grid-cols-2 gap-3">
                   <button
                     type="button"
@@ -202,9 +184,9 @@ export function ProductPurchasePanel({
               </>
             ) : (
               <div className="mt-8 rounded-2xl bg-[#eeede7] p-5">
-                <p className="text-sm font-bold">Sold out for now.</p>
+                <p className="text-sm font-bold">{needsSizeConfirmation ? 'Sizes awaiting confirmation.' : 'Sold out for now.'}</p>
                 <p className="mt-1 text-xs text-black/55">
-                  There is no verified live listing for this product.
+                  {needsSizeConfirmation ? 'Contact support@streetculturevault.com to confirm an available shoe size before ordering.' : 'There is no verified live listing for this product.'}
                 </p>
               </div>
             )}
@@ -376,7 +358,7 @@ export function ProductPurchasePanel({
           <div className="mx-auto flex max-w-lg items-center gap-3">
             <div className="min-w-0 flex-1">
               <p className="truncate text-xs font-bold">
-                {name} · {selected.sizes[0]}
+                {name} · {formatProductSize(selected.sizes[0], selected.sizeSystem)}
               </p>
               <p className="text-sm font-black">
                 <DisplayPrice amount={selected.price} />

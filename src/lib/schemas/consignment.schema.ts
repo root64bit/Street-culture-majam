@@ -5,7 +5,7 @@ export const consignmentSubmissionSchema = z.object({
   productName: z.string().min(1, 'Product name is required'),
   categoryId: z.string().uuid().optional(),
   size: z.string().min(1, 'Size is required'),
-  sizeSystem: z.string().default('US'),
+  sizeSystem: z.string().default('UK'),
   condition: z.string().min(1, 'Condition is required'),
   expectedPrice: z.number().positive('Expected price must be greater than 0'),
   currency: z.literal('MZN').default('MZN'),

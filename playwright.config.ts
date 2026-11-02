@@ -1,4 +1,19 @@
 import { defineConfig, devices } from '@playwright/test';
+import { assertIsolatedTestEnvironment } from './tests/helpers/test-environment';
+
+if (!assertIsolatedTestEnvironment(process.env)) {
+  throw new Error(
+    'Browser suites require the isolated test runner environment; shared/local/production databases are forbidden.'
+  );
+}
+if (
+  process.env.PLAYWRIGHT_TEST_BASE_URL &&
+  !['http://127.0.0.1:3031', 'http://localhost:3031'].includes(process.env.PLAYWRIGHT_TEST_BASE_URL)
+) {
+  throw new Error(
+    'Browser tests may target only the isolated local test application on port 3031.'
+  );
+}
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -8,7 +23,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: 'html',
   use: {
-    baseURL: process.env.PLAYWRIGHT_TEST_BASE_URL || 'http://localhost:3030',
+    baseURL: process.env.PLAYWRIGHT_TEST_BASE_URL || 'http://127.0.0.1:3031',
     trace: 'on-first-retry',
   },
   projects: [
@@ -17,10 +32,12 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'], channel: 'chrome' },
     },
   ],
-  webServer: process.env.PLAYWRIGHT_TEST_BASE_URL ? undefined : {
-    command: 'pnpm start -p 3030',
-    url: 'http://localhost:3030',
-    reuseExistingServer: !process.env.CI,
-    timeout: 60 * 1000,
-  },
+  webServer: process.env.PLAYWRIGHT_TEST_BASE_URL
+    ? undefined
+    : {
+        command: 'node scripts/sprint1-test-environment.mjs serve',
+        url: 'http://127.0.0.1:3031',
+        reuseExistingServer: false,
+        timeout: 60 * 1000,
+      },
 });

@@ -4,6 +4,7 @@ import { unstable_noStore as noStore } from 'next/cache';
 import type { StoreListingOption, StoreProduct } from '@/data/storefront';
 import { createClient } from '@/lib/supabase/server';
 import type { Database, Json } from '@/types/database.types';
+import { PRODUCT_SIZE_SYSTEMS } from '@/lib/product-sizes';
 
 export type CatalogListing = Database['public']['Views']['public_catalog_listings']['Row'];
 export type CatalogProduct = Database['public']['Views']['public_catalog_products']['Row'];
@@ -13,6 +14,7 @@ export interface CatalogFilters {
   category?: string;
   brand?: string;
   size?: string;
+  sizeSystem?: string;
   condition?: string;
   minPrice?: number;
   maxPrice?: number;
@@ -89,7 +91,15 @@ function listingOptions(value: Json | null): StoreListingOption[] {
       typeof size === 'string' &&
       typeof price === 'number' &&
       typeof condition === 'string'
-      ? [{ listingId, size, price, condition }]
+      ? [
+          {
+            listingId,
+            size,
+            price,
+            condition,
+            sizeSystem: typeof option.sizeSystem === 'string' ? option.sizeSystem : undefined,
+          },
+        ]
       : [];
   });
 }
@@ -108,12 +118,14 @@ export function listingToStoreProduct(listing: CatalogListing): StoreProduct {
     price: Number(required(listing.asking_price, 'asking_price')),
     condition: required(listing.condition, 'condition'),
     sizes: [required(listing.size, 'size')],
+    sizeSystem: listing.size_system ?? undefined,
     ownershipType: listing.ownership_type ?? undefined,
     authenticationStatus: listing.authentication_status ?? undefined,
     listingOptions: [
       {
         listingId: required(listing.listing_id, 'listing_id'),
         size: required(listing.size, 'size'),
+        sizeSystem: listing.size_system ?? undefined,
         price: Number(required(listing.asking_price, 'asking_price')),
         condition: required(listing.condition, 'condition'),
       },
@@ -128,7 +140,12 @@ export function listingToStoreProduct(listing: CatalogListing): StoreProduct {
 }
 
 export function catalogProductToStoreProduct(product: CatalogProduct): StoreProduct {
-  const options = listingOptions(product.listing_options);
+  const options = listingOptions(product.listing_options).map((option) => ({
+    ...option,
+    sizeSystem:
+      option.sizeSystem ??
+      (option.listingId === product.listing_id ? (product.size_system ?? undefined) : undefined),
+  }));
   const first = options[0];
   return {
     id: required(product.product_id, 'product_id'),
@@ -143,6 +160,7 @@ export function catalogProductToStoreProduct(product: CatalogProduct): StoreProd
     price: Number(first?.price ?? required(product.asking_price, 'asking_price')),
     condition: first?.condition ?? required(product.condition, 'condition'),
     sizes: product.sizes?.filter(Boolean) ?? (first ? [first.size] : []),
+    sizeSystem: first?.sizeSystem,
     ownershipType: product.ownership_type ?? undefined,
     authenticationStatus: product.authentication_status ?? undefined,
     listingOptions: options,
@@ -155,6 +173,41 @@ export function catalogProductToStoreProduct(product: CatalogProduct): StoreProd
   };
 }
 
+async function attachListingSizeSystems(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  products: CatalogProduct[]
+): Promise<CatalogProduct[]> {
+  const ids = [
+    ...new Set(
+      products.flatMap((product) =>
+        listingOptions(product.listing_options)
+          .filter((option) => !option.sizeSystem)
+          .map((option) => option.listingId)
+      )
+    ),
+  ];
+  const systems = new Map<string, string>();
+  for (let from = 0; from < ids.length; from += 100) {
+    const batch = ids.slice(from, from + 100);
+    const { data, error } = await supabase
+      .from('public_catalog_listings')
+      .select('listing_id,size_system')
+      .in('listing_id', batch)
+      .range(0, batch.length - 1);
+    if (error) throw new Error(`Listing sizes failed: ${error.message}`);
+    for (const listing of data ?? [])
+      if (listing.listing_id && listing.size_system)
+        systems.set(listing.listing_id, listing.size_system);
+  }
+  return products.map((product) => ({
+    ...product,
+    listing_options: listingOptions(product.listing_options).map((option) => ({
+      ...option,
+      sizeSystem: option.sizeSystem ?? systems.get(option.listingId),
+    })),
+  }));
+}
+
 export async function queryCatalogPage(filters: CatalogFilters = {}) {
   noStore();
   const supabase = await createClient();
@@ -162,7 +215,22 @@ export async function queryCatalogPage(filters: CatalogFilters = {}) {
 
   if (filters.category) request = request.eq('category_slug', filters.category);
   if (filters.brand) request = request.eq('brand_slug', filters.brand);
-  if (filters.size) request = request.contains('sizes', [filters.size]);
+  if (filters.size || filters.sizeSystem) {
+    // Filter on an actual matching listing, not the aggregated card's first variant.
+    const matches = new Set<string>();
+    for (let from = 0; ; from += 1000) {
+      let sizes = supabase.from('public_catalog_listings').select('product_id');
+      if (filters.sizeSystem) sizes = sizes.eq('size_system', filters.sizeSystem);
+      if (filters.size) sizes = sizes.eq('size', filters.size);
+      const { data: rows, error: sizeError } = await sizes
+        .order('listing_id')
+        .range(from, from + 999);
+      if (sizeError) throw new Error(`Size availability failed: ${sizeError.message}`);
+      for (const row of rows ?? []) if (row.product_id) matches.add(row.product_id);
+      if ((rows?.length ?? 0) < 1000) break;
+    }
+    request = request.in('product_id', [...matches]);
+  }
   if (filters.condition) request = request.contains('conditions', [filters.condition]);
   if (filters.minPrice !== undefined) request = request.gte('asking_price', filters.minPrice);
   if (filters.maxPrice !== undefined) request = request.lte('asking_price', filters.maxPrice);
@@ -196,7 +264,7 @@ export async function queryCatalogPage(filters: CatalogFilters = {}) {
     .order('product_id', { ascending: true })
     .range(from, from + limit - 1);
   if (error) throw new Error(`Catalog query failed: ${error.message}`);
-  return { rows: data ?? [], count: count ?? 0 };
+  return { rows: await attachListingSizeSystems(supabase, data ?? []), count: count ?? 0 };
 }
 
 export async function queryCatalog(filters: CatalogFilters = {}): Promise<CatalogProduct[]> {
@@ -253,14 +321,15 @@ export async function getAvailableVariants(productId: string) {
   for (const listing of listings) {
     const size = required(listing.size, 'size');
     const condition = required(listing.condition, 'condition');
-    const current = bySize.get(size);
+    const key = `${listing.size_system}:${size}`;
+    const current = bySize.get(key);
     if (current) {
       current.listingCount += 1;
       current.lowestPrice = Math.min(current.lowestPrice, Number(listing.asking_price));
       if (!current.conditions.includes(condition)) current.conditions.push(condition);
       current.listings.push(listingToStoreProduct(listing));
     } else {
-      bySize.set(size, {
+      bySize.set(key, {
         size,
         listingCount: 1,
         lowestPrice: Number(listing.asking_price),
@@ -319,7 +388,7 @@ export async function getRelatedProducts(productId: string, category: string, li
     .order('published_at', { ascending: false, nullsFirst: false })
     .limit(Math.min(8, Math.max(1, limit)));
   if (error) throw new Error(`Related products failed: ${error.message}`);
-  return (data ?? []).map(catalogProductToStoreProduct);
+  return (await attachListingSizeSystems(supabase, data ?? [])).map(catalogProductToStoreProduct);
 }
 
 type RawFacets = {
@@ -374,17 +443,32 @@ export async function getCatalogFacets(): Promise<CatalogFacets> {
           ]
         : []
     ),
-    sizes: (facets.sizes ?? []).flatMap((item) =>
-      typeof item.size === 'string'
-        ? [
-            {
-              value: item.size,
-              system: typeof item.size_system === 'string' ? item.size_system : undefined,
-              count: Number(item.listing_count ?? 0),
-            },
-          ]
-        : []
-    ),
+    sizes: (facets.sizes ?? [])
+      .flatMap((item) =>
+        typeof item.size === 'string'
+          ? [
+              {
+                value: item.size,
+                system: typeof item.size_system === 'string' ? item.size_system : undefined,
+                count: Number(item.listing_count ?? 0),
+              },
+            ]
+          : []
+      )
+      .sort((a, b) => {
+        const order = (system?: string) => {
+          const index = PRODUCT_SIZE_SYSTEMS.indexOf(
+            system as (typeof PRODUCT_SIZE_SYSTEMS)[number]
+          );
+          return index < 0 ? PRODUCT_SIZE_SYSTEMS.length : index;
+        };
+        return (
+          order(a.system) - order(b.system) ||
+          (/^\d+(\.\d+)?$/.test(a.value) && /^\d+(\.\d+)?$/.test(b.value)
+            ? Number(a.value) - Number(b.value)
+            : a.value.localeCompare(b.value, 'en', { numeric: true }))
+        );
+      }),
     conditions: (facets.conditions ?? []).flatMap((item) =>
       typeof item.condition === 'string'
         ? [{ value: item.condition, count: Number(item.listing_count ?? 0) }]

@@ -4,6 +4,7 @@ import { OrderFulfillmentActions } from '@/components/admin/OrderFulfillmentActi
 import { requireCapabilitiesPage } from '@/lib/admin/access';
 import { AdminActionForm } from '@/components/admin/AdminActionForm';
 import type { Json } from '@/types/database.types';
+import { OrderShipmentWorkspace } from '@/components/admin/OrderShipmentWorkspace';
 
 function Snapshot({ value }: { value: Json }) {
   if (!value || typeof value !== 'object' || Array.isArray(value))
@@ -205,6 +206,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
               pickup={Boolean(pickup)}
             />
           )}
+          <OrderShipmentWorkspace orderId={order.id} address={order.shipping_address_snapshot} quoteId={order.checkout_quote_id} packed={order.fulfillment_status === 'PACKED'} />
           <section className="rounded-2xl border border-[#e0e9e1] bg-white p-5">
             <h2 className="text-lg font-black">Customer</h2>
             <p className="mt-3 text-sm">

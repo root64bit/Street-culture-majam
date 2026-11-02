@@ -28,6 +28,7 @@ import {
   Images,
   ChartNoAxesCombined,
   Bell,
+  MessageSquareText,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SearchCommand } from '@/components/admin/SearchCommand';
@@ -66,6 +67,12 @@ const groups = [
       { label: 'Orders', href: '/admin/orders', icon: ShoppingBag, capability: 'orders.read' },
       { label: 'Payments', href: '/admin/payments', icon: CreditCard, capability: 'payments.read' },
       { label: 'Shipping', href: '/admin/shipping', icon: Truck, capability: 'shipping.read' },
+      {
+        label: 'Fulfillment queue',
+        href: '/admin/fulfillment',
+        icon: Package,
+        capability: 'shipping.read',
+      },
     ],
   },
   {
@@ -89,6 +96,12 @@ const groups = [
   {
     label: 'Finance',
     items: [
+      {
+        label: 'Profit and expenses',
+        href: '/admin/finance',
+        icon: ChartNoAxesCombined,
+        capability: 'finance.read',
+      },
       { label: 'Payouts', href: '/admin/payouts', icon: Wallet, capability: 'payouts.read' },
       {
         label: 'Commissions',
@@ -108,6 +121,12 @@ const groups = [
         capability: 'customers.read',
       },
       {
+        label: 'Contact requests',
+        href: '/admin/contact',
+        icon: MessageSquareText,
+        capability: 'customers.read',
+      },
+      {
         label: 'Reports',
         href: '/admin/reports',
         icon: ChartNoAxesCombined,
@@ -122,6 +141,18 @@ const groups = [
       { label: 'Staff & roles', href: '/admin/staff', icon: Users, capability: 'roles.read' },
       { label: 'Audit log', href: '/admin/audit', icon: ScrollText, capability: 'audit.read' },
       { label: 'Settings', href: '/admin/settings', icon: Settings, capability: 'settings.read' },
+      {
+        label: 'Email marketing',
+        href: '/admin/marketing',
+        icon: MessageSquareText,
+        capability: 'settings.manage',
+      },
+      {
+        label: 'Order emails and alerts',
+        href: '/admin/communications',
+        icon: MessageSquareText,
+        capability: 'settings.manage',
+      },
     ],
   },
 ];

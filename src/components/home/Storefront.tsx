@@ -1,5 +1,7 @@
 'use client';
 
+import { productSizeSummary } from '@/lib/commerce/purchase-options';
+
 import Image from 'next/image';
 import Link from 'next/link';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -597,7 +599,7 @@ export function Storefront({
               </h2>
               <p className="mt-6 max-w-md text-sm leading-7 text-white/60">
                 Verified {featuredProduct.condition.toLowerCase()} piece ·{' '}
-                {featuredProduct.sizes.join(', ')} · <DisplayPrice amount={featuredProduct.price} />
+                {productSizeSummary(featuredProduct)} · <DisplayPrice amount={featuredProduct.price} />
               </p>
               <Link
                 href={`/products/${featuredProduct.slug}`}
@@ -889,8 +891,7 @@ function ShowcaseTile({
           </h3>
           <p className="mt-2 truncate text-xs text-black/50">
             {product.condition.replaceAll('_', ' ')} ·{' '}
-            {product.sizes.length ? product.sizes.slice(0, 3).join(' · ') : 'One Size'}
-            {product.sizes.length > 3 ? ' +' : ''}
+            {productSizeSummary(product)}
           </p>
           <div className="mt-4 flex items-end justify-between gap-3">
             <p className="text-xl font-black tracking-[-0.03em]">
@@ -984,8 +985,7 @@ function ProductTile({
             <DisplayPrice amount={product.price} />
           </p>
           <p className="truncate text-[9px] text-black/45 sm:text-[10px]">
-            {product.sizes.slice(0, 3).join(' · ')}
-            {product.sizes.length > 3 ? ' +' : ''}
+            {productSizeSummary(product)}
           </p>
         </div>
       </div>

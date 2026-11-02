@@ -3,9 +3,13 @@ import { NextResponse, type NextRequest } from 'next/server';
 import type { Database } from '@/types/database.types';
 
 export async function updateSession(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({
-    request,
-  });
+  const sessionResponse = () => {
+    const headers = new Headers(request.headers);
+    // Always overwrite inbound values; this is a navigation hint, never authority.
+    headers.set('x-street-culture-path', request.nextUrl.pathname + request.nextUrl.search);
+    return NextResponse.next({ request: { headers } });
+  };
+  let supabaseResponse = sessionResponse();
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -20,12 +24,20 @@ export async function updateSession(request: NextRequest) {
         return request.cookies.getAll();
       },
       setAll(cookiesToSet: { name: string; value: string; options?: Record<string, unknown> }[]) {
-        cookiesToSet.forEach(({ name, value }: { name: string; value: string }) => request.cookies.set(name, value));
-        supabaseResponse = NextResponse.next({
-          request,
-        });
-        cookiesToSet.forEach(({ name, value, options }: { name: string; value: string; options?: Record<string, unknown> }) =>
-          supabaseResponse.cookies.set(name, value, options)
+        cookiesToSet.forEach(({ name, value }: { name: string; value: string }) =>
+          request.cookies.set(name, value)
+        );
+        supabaseResponse = sessionResponse();
+        cookiesToSet.forEach(
+          ({
+            name,
+            value,
+            options,
+          }: {
+            name: string;
+            value: string;
+            options?: Record<string, unknown>;
+          }) => supabaseResponse.cookies.set(name, value, options)
         );
       },
     },

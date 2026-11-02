@@ -48,9 +48,10 @@ export function VariantGenerator({ productId }: { productId: string }) {
           Size system
           <select
             name="system"
+            defaultValue="UK"
             className="mt-1 block w-full rounded-lg border border-[#dce6dc] bg-white p-2 text-sm"
           >
-            {['US', 'UK', 'EU', 'CM', 'ONE_SIZE'].map((v) => (
+            {['UK', 'US', 'EU', 'CM', 'ONE_SIZE'].map((v) => (
               <option key={v}>{v}</option>
             ))}
           </select>

@@ -10,6 +10,7 @@ const config: Config = {
   darkMode: 'class',
   theme: {
     extend: {
+      spacing: { 13: '3.25rem' },
       colors: {
         vault: {
           50: '#f8fafc',

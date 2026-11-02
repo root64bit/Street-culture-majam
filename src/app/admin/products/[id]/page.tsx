@@ -11,7 +11,12 @@ import { InventoryActions } from '@/components/admin/InventoryActions';
 import { StockDraftForm } from '@/components/admin/StockDraftForm';
 import { AdminPagination } from '@/components/admin/AdminPagination';
 import { redactMetadata } from '@/lib/admin/redaction';
-const tabs = ['general', 'variants', 'media', 'listings', 'pricing', 'seo', 'history'];
+import { ProductEditModeButton } from '@/components/admin/ProductEditModeButton';
+import { ListingConditionEditor } from '@/components/admin/ListingConditionEditor';
+import { AdminActionForm } from '@/components/admin/AdminActionForm';
+import { ListingCostEditor } from '@/components/admin/ListingCostEditor';
+import type { InventoryCostPrice } from '@/lib/finance/inventory-cost';
+const tabs = ['all', 'general', 'variants', 'media', 'listings', 'pricing', 'seo', 'history'];
 export default async function EditAdminProductPage({
   params,
   searchParams,
@@ -22,7 +27,8 @@ export default async function EditAdminProductPage({
   const { id } = await params;
   if (!validId(id)) notFound();
   const filters = await searchParams;
-  const tab = tabs.includes(filters.tab ?? '') ? filters.tab! : 'general';
+  const tab = tabs.includes(filters.tab ?? '') ? filters.tab! : 'all';
+  const show = (section: string) => tab === 'all' || tab === section;
   const page = pageNumber(filters.page);
   const pageSize = 30;
   const { supabase } = await requireCapabilitiesPage(`/admin/products/${id}`, ['products.read']);
@@ -47,7 +53,7 @@ export default async function EditAdminProductPage({
   const visibility = diagnostics.data;
   const basePath = `/admin/products/${id}`;
   const photos =
-    tab === 'media' || tab === 'general'
+    show('media') || show('general')
       ? await supabase
           .from('product_media')
           .select('id,storage_path,sort_order,alt_text')
@@ -55,16 +61,15 @@ export default async function EditAdminProductPage({
           .order('sort_order')
           .limit(100)
       : null;
-  const variants =
-    tab === 'variants'
-      ? await supabase.rpc('admin_product_variants', {
-          target_product_id: id,
-          page_offset: (page - 1) * pageSize,
-          page_limit: pageSize,
-        })
-      : null;
+  const variants = show('variants')
+    ? await supabase.rpc('admin_product_variants', {
+        target_product_id: id,
+        page_offset: (page - 1) * pageSize,
+        page_limit: pageSize,
+      })
+    : null;
   const listings =
-    tab === 'listings' && can('inventory.read')
+    show('listings') && can('inventory.read')
       ? await supabase
           .from('listings')
           .select('*,product_variants(size,size_system)', { count: 'exact' })
@@ -72,12 +77,21 @@ export default async function EditAdminProductPage({
           .order('created_at', { ascending: false })
           .range((page - 1) * pageSize, page * pageSize - 1)
       : null;
-  const pricing =
-    tab === 'pricing'
-      ? await supabase.rpc('admin_product_pricing', { target_product_id: id }).maybeSingle()
+  const pricing = show('pricing')
+    ? await supabase.rpc('admin_product_pricing', { target_product_id: id }).maybeSingle()
+    : null;
+  const privateCosts =
+    show('listings') && can('finance.read') && listings?.data?.length
+      ? await supabase
+          .from('inventory_cost_prices')
+          .select('listing_id,amount,currency,mzn_per_unit,amount_mzn,reference,revision')
+          .in(
+            'listing_id',
+            listings.data.map((listing) => listing.id)
+          )
       : null;
   const history =
-    tab === 'history' && can('audit.read')
+    show('history') && can('audit.read')
       ? await supabase
           .from('admin_audit_logs')
           .select('id,actor_id,action,metadata,created_at', { count: 'exact' })
@@ -85,7 +99,7 @@ export default async function EditAdminProductPage({
           .order('created_at', { ascending: false })
           .range((page - 1) * pageSize, page * pageSize - 1)
       : null;
-  if ([photos, variants, listings, pricing, history].some((result) => result?.error))
+  if ([photos, variants, listings, pricing, history, privateCosts].some((result) => result?.error))
     throw new Error('Product workspace unavailable.');
   const money = (value: number | null | undefined) =>
     value == null
@@ -105,6 +119,9 @@ export default async function EditAdminProductPage({
           <h1 className="mt-2 text-3xl font-black tracking-tight">{record.name}</h1>
           <p className="mt-2 text-sm text-[#61766b]">
             {record.sku ?? 'No catalog SKU'} · {record.style_code ?? 'No style code'}
+          </p>
+          <p className="mt-2 text-sm text-[#61766b]">
+            Edit details, photos, sizes, listing prices and SEO in this workspace.
           </p>
         </div>
         {record.active && (
@@ -186,7 +203,22 @@ export default async function EditAdminProductPage({
           </Link>
         ))}
       </nav>
-      {tab === 'general' &&
+      {record.active && can('products.write') && show('general') && (
+        <div className="mb-6 space-y-3 rounded-2xl border border-amber-200 bg-amber-50 p-5">
+          <p className="text-sm">
+            This product is active. Unpublish available listings to unlock its identity fields.
+            Photos and available listing prices have their own editors below; reserved or sold items
+            remain protected.
+          </p>
+          {can('inventory.manage') ? (
+            <ProductEditModeButton productId={id} />
+          ) : (
+            <p className="text-sm">Ask an inventory manager to prepare this product for editing.</p>
+          )}
+        </div>
+      )}
+      {show('general') && <h2 className="mt-8 text-xl font-black">Product details</h2>}
+      {show('general') &&
         (can('products.write') ? (
           <ProductEditor
             compact
@@ -212,7 +244,8 @@ export default async function EditAdminProductPage({
             ))}
           </dl>
         ))}
-      {tab === 'variants' && (
+      {show('variants') && <h2 className="mb-4 mt-10 text-xl font-black">Sizes and variants</h2>}
+      {show('variants') && (
         <div className="rounded-2xl border border-[#dce6dc] bg-white p-5">
           <p className="mb-4 text-sm text-[#61766b]">
             Quantity counts real available listings, not generated sizes. Sold or reserved variant
@@ -250,7 +283,32 @@ export default async function EditAdminProductPage({
           {can('products.write') && <VariantGenerator productId={id} />}
         </div>
       )}
-      {tab === 'media' && (
+      {show('general') && can('products.write') && (
+        <div className="my-8 max-w-2xl space-y-3">
+          <h2 className="text-xl font-black">Storefront placement</h2>
+          <p className="text-sm text-[#61766b]">
+            Featured: {record.featured ? 'Yes' : 'No'} · Most Wanted:{' '}
+            {record.most_wanted ? 'Yes' : 'No'}. Placement does not publish inventory.
+          </p>
+          <AdminActionForm
+            endpoint="/api/admin/products/bulk"
+            payload={{ ids: [id] }}
+            label="Save placement"
+            actions={[
+              {
+                value: record.featured ? 'UNFEATURE' : 'FEATURE',
+                label: record.featured ? 'Remove featured placement' : 'Feature product',
+              },
+              {
+                value: record.most_wanted ? 'REMOVE_MOST_WANTED' : 'MOST_WANTED',
+                label: record.most_wanted ? 'Remove from Most Wanted' : 'Add to Most Wanted',
+              },
+            ]}
+          />
+        </div>
+      )}
+      {show('media') && <h2 className="mb-4 mt-10 text-xl font-black">Photos and media</h2>}
+      {show('media') && (
         <ProductMediaEditor
           productId={id}
           name={record.name}
@@ -258,7 +316,10 @@ export default async function EditAdminProductPage({
           editable={can('media.manage')}
         />
       )}
-      {tab === 'listings' && (
+      {show('listings') && (
+        <h2 className="mb-4 mt-10 text-xl font-black">Listings, condition and asking prices</h2>
+      )}
+      {show('listings') && (
         <div>
           {!can('inventory.read') ? (
             <p className="p-6 text-sm">Inventory access is not included in this role.</p>
@@ -303,7 +364,23 @@ export default async function EditAdminProductPage({
                           )}
                         </td>
                         <td className="p-4">{listing.condition}</td>
-                        <td className="p-4">{money(listing.asking_price)}</td>
+                        <td className="min-w-72 p-4">
+                          {money(listing.asking_price)}
+                          {can('finance.read') && listing.ownership_type === 'STREET_CULTURE' && (
+                            <ListingCostEditor
+                              key={`${listing.id}-${privateCosts?.data?.find((cost) => cost.listing_id === listing.id)?.revision ?? 0}`}
+                              listingId={listing.id}
+                              cost={
+                                (privateCosts?.data?.find(
+                                  (cost) => cost.listing_id === listing.id
+                                ) as InventoryCostPrice | undefined) ?? null
+                              }
+                              editable={
+                                can('finance.manage') && ['DRAFT', 'LIVE'].includes(listing.status)
+                              }
+                            />
+                          )}
+                        </td>
                         <td className="p-4">
                           {listing.status}
                           <p className="text-xs text-[#61766b]">{listing.authentication_status}</p>
@@ -316,6 +393,14 @@ export default async function EditAdminProductPage({
                               authenticationStatus={listing.authentication_status}
                             />
                           )}
+                          {can('inventory.manage') &&
+                            listing.status === 'DRAFT' &&
+                            listing.ownership_type === 'STREET_CULTURE' && (
+                              <ListingConditionEditor
+                                id={listing.id}
+                                condition={listing.condition}
+                              />
+                            )}
                         </td>
                       </tr>
                     ))}
@@ -340,6 +425,7 @@ export default async function EditAdminProductPage({
                   productId={id}
                   productArchived={Boolean(record.archived_at)}
                   canAuthenticate={can('authentication.review')}
+                  canSetPrivateCost={can('finance.manage')}
                   initialStock={(listings?.data ?? [])
                     .filter((l) => l.ownership_type === 'STREET_CULTURE')
                     .map((l) => ({
@@ -353,7 +439,8 @@ export default async function EditAdminProductPage({
           )}
         </div>
       )}
-      {tab === 'pricing' && (
+      {show('pricing') && <h2 className="mb-4 mt-10 text-xl font-black">Pricing overview</h2>}
+      {show('pricing') && (
         <div className="grid gap-4 sm:grid-cols-4">
           {[
             ['Retail reference', money(record.retail_price)],
@@ -372,7 +459,8 @@ export default async function EditAdminProductPage({
           </p>
         </div>
       )}
-      {tab === 'seo' &&
+      {show('seo') && <h2 className="mb-4 mt-10 text-xl font-black">SEO and retail reference</h2>}
+      {show('seo') &&
         (can('products.write') ? (
           <ProductSeoForm
             productId={id}
@@ -385,7 +473,8 @@ export default async function EditAdminProductPage({
         ) : (
           <p className="p-6 text-sm">Catalog write access is required to edit SEO metadata.</p>
         ))}
-      {tab === 'history' && (
+      {show('history') && <h2 className="mb-4 mt-10 text-xl font-black">Change history</h2>}
+      {show('history') && (
         <div className="rounded-2xl border bg-white">
           {!can('audit.read') ? (
             <p className="p-6 text-sm">Audit access is not included in this role.</p>

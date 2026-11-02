@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
+import { isFootwearProduct, isPurchasableSize } from '@/lib/product-sizes';
 
 const schema = z.object({
   items: z.array(z.object({
@@ -19,13 +20,14 @@ export async function POST(request: Request) {
     const supabase = await createClient();
     const { data, error } = await supabase
       .from('public_catalog_listings')
-      .select('listing_id, asking_price, size')
+      .select('listing_id, asking_price, size, size_system, category_slug, product_name')
       .in('listing_id', parsed.data.items.map((item) => item.listingId));
     if (error) throw error;
     const byId = new Map((data ?? []).map((row) => [row.listing_id, row]));
     const items = parsed.data.items.map((item) => {
       const listing = byId.get(item.listingId);
-      if (!listing || listing.size !== item.size) {
+      if (!listing || listing.size !== item.size || !isPurchasableSize(listing.size || '', listing.size_system || undefined,
+        isFootwearProduct(listing.category_slug || '', listing.product_name || ''))) {
         return { listingId: item.listingId, status: 'unavailable' as const };
       }
       const currentPrice = Number(listing.asking_price);

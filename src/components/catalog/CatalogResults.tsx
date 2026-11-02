@@ -7,6 +7,7 @@ import type { StoreProduct } from '@/data/storefront';
 import { useCommerce } from '@/features/commerce/CommerceProvider';
 import { DisplayPrice } from '@/features/currency/CurrencyProvider';
 import { useWishlist } from '@/features/commerce/useWishlist';
+import { productSizeSummary } from '@/lib/commerce/purchase-options';
 
 export function CatalogResults({ products }: { products: StoreProduct[] }) {
   const { openQuickBuy } = useCommerce();
@@ -87,7 +88,7 @@ export function CatalogResults({ products }: { products: StoreProduct[] }) {
             <p className="mt-2 text-xs text-black/55">
               {product.categoryName ?? product.category} · {product.condition}
             </p>
-            <p className="mt-1 truncate text-[10px] text-black/45">{product.sizes.join(' · ')}</p>
+            <p className="mt-1 truncate text-[10px] text-black/45">{productSizeSummary(product)}</p>
             <p className="mt-2 text-sm font-black">
               <DisplayPrice amount={product.price} />
             </p>

@@ -16,11 +16,31 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import type { StoreProduct } from '@/data/storefront';
+import type { StoreProduct, StoreListingOption } from '@/data/storefront';
+import { formatProductSize } from '@/lib/product-sizes';
+import { purchasableOptions } from '@/lib/commerce/purchase-options';
+import { AvailableSizeSelect } from '@/components/catalog/AvailableSizeSelect';
 import { formatPrice } from '@/lib/utils';
 import { DisplayPrice } from '@/features/currency/CurrencyProvider';
 import { cn } from '@/lib/utils';
 import { useCommerce, type CartLine } from '@/features/commerce/CommerceProvider';
+import { shippingCountries } from '@/lib/shipping/countries';
+import { southAfricaProvinces } from '@/lib/shipping/address';
+import { MPESA_MAX_TRANSACTION_MZN, splitMpesaAmount } from '@/lib/payments/mpesa-installments';
+import { normalizeMpesaPhone } from '@/lib/payments/mpesa-phone';
+import { paymentProviderAllowed } from '@/lib/payments/provider-policy';
+import { formatSquareAmount } from '@/lib/payments/square-money';
+import { sumMoney, mpesaAmountEligible } from '@/lib/money';
+import { shippingQuoteIsCurrent } from '@/lib/shipping/quote-validity';
+import {
+  decodeSavedAddresses,
+  type CheckoutIdentity,
+  type SavedAddress,
+} from '@/lib/checkout-addresses';
+import {
+  SquarePaymentForm,
+  type SquareCheckoutQuote,
+} from '@/components/payments/SquarePaymentForm';
 
 function DialogShell({
   open,
@@ -115,16 +135,7 @@ function DialogShell({
 
 function QuickBuyContent({ product }: { product: StoreProduct }) {
   const { addToCart, closeQuickBuy } = useCommerce();
-  const options = product.listingOptions?.length
-    ? product.listingOptions
-    : product.listingId
-      ? product.sizes.map((size) => ({
-          listingId: product.listingId!,
-          size,
-          price: product.price,
-          condition: product.condition,
-        }))
-      : [];
+  const options: StoreListingOption[] = purchasableOptions(product);
   const [selectedListingId, setSelectedListingId] = useState(
     options.length === 1 ? options[0].listingId : ''
   );
@@ -144,6 +155,7 @@ function QuickBuyContent({ product }: { product: StoreProduct }) {
         price: selected.price,
         condition: selected.condition,
         sizes: [selected.size],
+        sizeSystem: selected.sizeSystem,
         listingOptions: [selected],
       },
       selected.size,
@@ -179,27 +191,14 @@ function QuickBuyContent({ product }: { product: StoreProduct }) {
           <label className="text-xs font-bold uppercase tracking-[0.12em]">Select size</label>
           <span className="text-xs text-black/45">{selected?.condition ?? product.condition}</span>
         </div>
-        <div className="mt-3 grid grid-cols-3 gap-2">
-          {options.map((option) => (
-            <button
-              key={option.listingId}
-              type="button"
-              onClick={() => {
-                setSelectedListingId(option.listingId);
-                setShowError(false);
-              }}
-              aria-pressed={selectedListingId === option.listingId}
-              className={cn(
-                'min-h-11 rounded-xl border text-sm font-semibold transition',
-                selectedListingId === option.listingId
-                  ? 'border-black bg-black text-white'
-                  : 'border-black/15 bg-white hover:border-black'
-              )}
-            >
-              {option.size}
-            </button>
-          ))}
-        </div>
+        <AvailableSizeSelect
+          options={options}
+          value={selectedListingId}
+          onChange={(id) => {
+            setSelectedListingId(id);
+            setShowError(false);
+          }}
+        />
         {showError && (
           <p className="text-red-650 mt-3 text-sm font-medium" role="alert">
             Choose a size before continuing.
@@ -219,6 +218,7 @@ function QuickBuyContent({ product }: { product: StoreProduct }) {
           <button
             type="button"
             onClick={() => add(false)}
+            disabled={!options.length}
             className="h-13 rounded-full border border-black px-5 text-xs font-bold uppercase tracking-[0.14em] transition hover:bg-black hover:text-white"
           >
             Add to bag
@@ -226,6 +226,7 @@ function QuickBuyContent({ product }: { product: StoreProduct }) {
           <button
             type="button"
             onClick={() => add(true)}
+            disabled={!options.length}
             className="h-13 rounded-full bg-black px-5 text-xs font-bold uppercase tracking-[0.14em] text-white transition hover:bg-acid hover:text-black"
           >
             Buy now
@@ -380,7 +381,8 @@ function CartDrawer() {
                         </p>
                         <h3 className="mt-1 font-bold leading-tight">{line.product.name}</h3>
                         <p className="mt-1 text-xs text-black/50">
-                          {line.size} · {line.product.condition}
+                          {formatProductSize(line.size, line.product.sizeSystem)} ·{' '}
+                          {line.product.condition}
                         </p>
                       </div>
                       <button
@@ -449,114 +451,749 @@ function CartDrawer() {
 
 type CheckoutStep = 'contact' | 'delivery' | 'payment' | 'review' | 'confirmation';
 type PaymentState =
-  'idle' | 'waiting' | 'processing' | 'timedOut' | 'paid' | 'paidNeedsHelp' | 'failed';
+  'idle' | 'waiting' | 'processing' | 'partial' | 'timedOut' | 'paid' | 'paidNeedsHelp' | 'failed';
+
+type PaymentProgress = {
+  paidAmount: number;
+  remainingAmount: number;
+  nextInstallmentAmount: number;
+  installmentAmount?: number;
+  installmentNumber: number;
+  installmentCount: number;
+};
 
 type ShippingMethod = {
+  quoteId: string;
+  expiresAt: string;
   code: string;
   name: string;
+  description: string;
   price: number;
   currency: string;
+  provider_price: number;
+  provider_currency: 'ZAR' | 'MZN';
   estimated_min_days: number;
   estimated_max_days: number;
+  source: 'internet_express' | 'configured';
 };
 
 const checkoutSteps: CheckoutStep[] = ['contact', 'delivery', 'payment', 'review'];
 
-function CheckoutSheet() {
-  const { cart, subtotal, checkoutOpen, closeCheckout, clearCart } = useCommerce();
+function internationalPhoneIsValid(value: string) {
+  const digits = value.replace(/\D/g, '');
+  return digits.length >= 7 && digits.length <= 15;
+}
+
+export function CheckoutSheet() {
+  const {
+    cart: currentCart,
+    subtotal: currentSubtotal,
+    checkoutOpen,
+    closeCheckout,
+    clearCart,
+    removeFromCart,
+  } = useCommerce();
+  const [reservedCart, setReservedCart] = useState<CartLine[] | null>(null);
+  const cart = reservedCart ?? currentCart;
+  const subtotal = reservedCart
+    ? sumMoney(reservedCart.map((line) => line.product.price))
+    : currentSubtotal;
   const [step, setStep] = useState<CheckoutStep>('contact');
-  const [paymentMethod, setPaymentMethod] = useState<'mpesa' | 'card'>('mpesa');
+  const [paymentMethod, setPaymentMethod] = useState<'mpesa' | 'card' | 'applePay'>('mpesa');
   const [paymentState, setPaymentState] = useState<PaymentState>('idle');
   const [error, setError] = useState('');
   const [phone, setPhone] = useState('');
+  const [mpesaPhone, setMpesaPhone] = useState('');
+  const mpesaPhoneEdited = useRef(false);
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
   const [addressLine2, setAddressLine2] = useState('');
+  const [localArea, setLocalArea] = useState('');
   const [postalCode, setPostalCode] = useState('');
   const [deliveryNotes, setDeliveryNotes] = useState('');
   const [city, setCity] = useState('Maputo');
   const [province, setProvince] = useState('Maputo');
+  const [country, setCountry] = useState('MZ');
+  const [addressType, setAddressType] = useState<'residential' | 'business'>('residential');
   const [shippingMethods, setShippingMethods] = useState<ShippingMethod[]>([]);
   const [shippingMethodCode, setShippingMethodCode] = useState('');
   const [shippingLoading, setShippingLoading] = useState(false);
+  const [shippingError, setShippingError] = useState('');
+  const [shippingQuoteContext, setShippingQuoteContext] = useState('');
+  const [quoteRefresh, setQuoteRefresh] = useState(0);
+  const [quoteNow, setQuoteNow] = useState(Date.now);
+  const [parcelBasis, setParcelBasis] = useState('');
   const [orderNumber, setOrderNumber] = useState('');
   const [checkoutAttemptId, setCheckoutAttemptId] = useState('');
   const [checkoutSecret, setCheckoutSecret] = useState('');
   const [orderId, setOrderId] = useState('');
   const [confirmedTotal, setConfirmedTotal] = useState<number | null>(null);
-  const squareEnabled = process.env.NEXT_PUBLIC_SQUARE_PAYMENTS_ENABLED === 'true';
-  const mpesaEnabled = process.env.NEXT_PUBLIC_MPESA_PAYMENTS_ENABLED === 'true';
-  const selectedShipping = shippingMethods.find((method) => method.code === shippingMethodCode);
-  const shipping = selectedShipping?.price ?? 0;
-  const total = subtotal + shipping;
-
+  const [paymentProgress, setPaymentProgress] = useState<PaymentProgress | null>(null);
+  const [mpesaPaymentId, setMpesaPaymentId] = useState('');
+  const [mpesaStatusNotice, setMpesaStatusNotice] = useState('');
+  const [squareQuote, setSquareQuote] = useState<SquareCheckoutQuote | null>(null);
+  const [preparingSquare, setPreparingSquare] = useState(false);
+  const [checkingSquare, setCheckingSquare] = useState(false);
+  const [identity, setIdentity] = useState<CheckoutIdentity>({ signedIn: false });
+  const [identityLoading, setIdentityLoading] = useState(false);
+  const [selectedAddressId, setSelectedAddressId] = useState('');
+  const [saveAddress, setSaveAddress] = useState(false);
+  const [defaultAddress, setDefaultAddress] = useState(false);
+  const [addressLabel, setAddressLabel] = useState('Home');
+  const [savingAddress, setSavingAddress] = useState(false);
+  const [savedNotice, setSavedNotice] = useState('');
+  const contactEdited = useRef({ name: false, email: false, phone: false });
+  const addressEdited = useRef(false),
+    savingAddressRef = useRef(false);
+  const lastIdentity = useRef<string | null>(null),
+    newAddressId = useRef('');
+  const checkoutGeneration = useRef(0);
   useEffect(() => {
-    if (!checkoutOpen || !province.trim()) return;
+    if (!checkoutOpen) checkoutGeneration.current++;
+  }, [checkoutOpen]);
+  const editAddress = (setter: (value: string) => void, value: string) => {
+    addressEdited.current = true;
+    setSavedNotice('');
+    setter(value);
+  };
+  const applySavedAddress = (entry: SavedAddress, preserveContact = false) => {
+    const a = entry.details;
+    if (!preserveContact || !contactEdited.current.name) setName(a.name);
+    if (!preserveContact || !contactEdited.current.email) setEmail(a.email);
+    if (!preserveContact || !contactEdited.current.phone) setPhone(a.phone);
+    setAddress(a.address_line_1);
+    setAddressLine2(a.address_line_2);
+    setLocalArea(a.local_area);
+    setPostalCode(a.postal_code);
+    setCity(a.city);
+    setProvince(a.province);
+    setCountry(a.country);
+    setAddressType(a.address_type);
+    setDeliveryNotes(a.delivery_notes);
+    setSelectedAddressId(entry.id);
+    setAddressLabel(entry.label);
+    setDefaultAddress(entry.is_default);
+    setSaveAddress(false);
+    setSavedNotice('');
+  };
+  useEffect(() => {
+    if (!checkoutOpen || orderId) return;
     let active = true;
-    setShippingLoading(true);
-    fetch('/api/checkout/shipping', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ country: 'MZ', province: province.trim() }),
-      cache: 'no-store',
-    })
+    const controller = new AbortController();
+    setIdentityLoading(true);
+    void fetch('/api/account/checkout', { cache: 'no-store', signal: controller.signal })
       .then(async (response) => {
-        const result = await response.json();
-        if (!response.ok) throw new Error(result?.error || 'Delivery options are unavailable.');
-        return result.methods as ShippingMethod[];
+        if (!response.ok) throw new Error('Account details unavailable');
+        return (await response.json()) as CheckoutIdentity;
       })
-      .then((methods) => {
-        if (!active) return;
-        setShippingMethods(methods);
-        setShippingMethodCode((current) =>
-          methods.some((method) => method.code === current) ? current : (methods[0]?.code ?? '')
-        );
-      })
-      .catch(() => {
-        if (active) {
-          setShippingMethods([]);
-          setShippingMethodCode('');
+      .then((result) => {
+        if (!active || typeof result.signedIn !== 'boolean') return;
+        const userId = result.signedIn ? result.userId : null;
+        if (lastIdentity.current && lastIdentity.current !== userId) {
+          contactEdited.current = { name: false, email: false, phone: false };
+          addressEdited.current = false;
+          setName('');
+          setEmail('');
+          setPhone('');
+          setMpesaPhone('');
+          mpesaPhoneEdited.current = false;
+          setAddress('');
+          setAddressLine2('');
+          setLocalArea('');
+          setCity('');
+          setProvince('');
+          setPostalCode('');
+          setDeliveryNotes('');
+          setSelectedAddressId('');
+          setSaveAddress(false);
+          newAddressId.current = '';
+        }
+        lastIdentity.current = userId;
+        setIdentity(result);
+        if (result.signedIn) {
+          if (!contactEdited.current.name) setName((current) => current || result.contact.name);
+          if (!contactEdited.current.email) setEmail((current) => current || result.contact.email);
+          if (!contactEdited.current.phone) setPhone((current) => current || result.contact.phone);
+          const preferred = result.addresses.find((entry) => entry.is_default);
+          if (preferred && !addressEdited.current) applySavedAddress(preferred, true);
         }
       })
+      .catch(() => {
+        /* Manual guest/account checkout remains available if profile loading fails. */
+      })
       .finally(() => {
-        if (active) setShippingLoading(false);
+        if (active) setIdentityLoading(false);
       });
     return () => {
       active = false;
+      controller.abort();
     };
-  }, [checkoutOpen, province]);
+    // Fetch only when opening an unreserved checkout. Late results never replace
+    // touched fields, and reserved order snapshots are never autofilled again.
+  }, [checkoutOpen, orderId]);
+  const orderRequestPending = useRef(false);
+  const squareEnabled =
+    paymentProviderAllowed('square') && process.env.NEXT_PUBLIC_SQUARE_PAYMENTS_ENABLED === 'true';
+  const mpesaEnabled = process.env.NEXT_PUBLIC_MPESA_PAYMENTS_ENABLED === 'true';
+  const selectedShipping = shippingMethods.find((method) => method.code === shippingMethodCode);
+  // Bind the displayed quote to exactly the cart/address used to request it.
+  // The server independently enforces this binding when reserving the order.
+  const shippingRequest = JSON.stringify({
+    address_line_1: address.trim(),
+    address_line_2: addressLine2.trim(),
+    local_area: localArea.trim(),
+    city: city.trim(),
+    province: province.trim(),
+    postal_code: postalCode.trim(),
+    country,
+    address_type: addressType,
+    items: cart.map((line) => ({
+      listingId: line.listingId,
+      size: line.size,
+      quantity: line.quantity,
+      displayedPrice: line.product.price,
+    })),
+  });
+  const addressComplete = Boolean(
+    address.trim() &&
+    localArea.trim() &&
+    city.trim() &&
+    province.trim() &&
+    postalCode.trim() &&
+    cart.length
+  );
+  const quoteCurrent =
+    shippingQuoteContext === shippingRequest &&
+    shippingQuoteIsCurrent(selectedShipping, Math.max(quoteNow, Date.now()));
+  const deliveryReady = Boolean(orderId) || quoteCurrent;
+  const shipping = selectedShipping?.price ?? 0;
+  const total = sumMoney([subtotal, shipping]);
+  const displayedPaymentTotal = confirmedTotal ?? total;
+  const mpesaEligible = mpesaAmountEligible(displayedPaymentTotal);
+  const installmentPlan = mpesaEligible ? splitMpesaAmount(displayedPaymentTotal) : [];
+
+  useEffect(() => {
+    if (!checkoutOpen) {
+      if (orderId) return; // Preserve the accepted quote/amount while a reservation exists.
+      setShippingMethods([]);
+      setShippingMethodCode('');
+      setShippingError('');
+      setParcelBasis('');
+      setShippingQuoteContext('');
+      setStep('contact');
+      return;
+    }
+    // Preserve the selected quote after the customer advances to payment and
+    // review. Clearing it here would make every payment attempt fail locally.
+    if (step !== 'delivery') return;
+    if (!addressComplete) {
+      setShippingMethods([]);
+      setShippingMethodCode('');
+      setShippingError('');
+      setParcelBasis('');
+      setShippingLoading(false);
+      return;
+    }
+    let active = true;
+    setShippingLoading(true);
+    setShippingMethods([]);
+    setShippingMethodCode('');
+    setShippingQuoteContext('');
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setShippingLoading(true);
+      setShippingError('');
+      fetch('/api/checkout/shipping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: shippingRequest,
+        cache: 'no-store',
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          const result = await response.json();
+          if (!response.ok) throw new Error(result?.error || 'Delivery options are unavailable.');
+          return result as { methods: ShippingMethod[]; parcelBasis?: string };
+        })
+        .then((result) => {
+          if (!active) return;
+          setShippingMethods(result.methods);
+          setShippingQuoteContext(shippingRequest);
+          setQuoteNow(Date.now());
+          setParcelBasis(result.parcelBasis ?? '');
+          setShippingMethodCode((current) =>
+            result.methods.some((method) => method.code === current)
+              ? current
+              : (result.methods[0]?.code ?? '')
+          );
+          if (!result.methods.length) {
+            setShippingError(
+              'No delivery service is available for this address. Check the address or contact support.'
+            );
+          }
+        })
+        .catch((cause) => {
+          if (active && !(cause instanceof DOMException && cause.name === 'AbortError')) {
+            setShippingMethods([]);
+            setShippingMethodCode('');
+            setParcelBasis('');
+            setShippingError(
+              cause instanceof Error ? cause.message : 'Delivery options are unavailable.'
+            );
+          }
+        })
+        .finally(() => {
+          if (active) setShippingLoading(false);
+        });
+    }, 650);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [shippingRequest, addressComplete, checkoutOpen, step, orderId, quoteRefresh]);
+
+  useEffect(() => {
+    if (!checkoutOpen || orderId || !selectedShipping) return;
+    const expiry = Date.parse(selectedShipping.expiresAt);
+    if (!Number.isFinite(expiry) || expiry <= Date.now()) return;
+    const timer = window.setTimeout(
+      () => setQuoteNow(Date.now()),
+      Math.min(expiry - Date.now() + 1, 2_147_483_647)
+    );
+    return () => window.clearTimeout(timer);
+  }, [checkoutOpen, orderId, selectedShipping]);
+
+  useEffect(() => {
+    if (
+      !checkoutOpen ||
+      orderId ||
+      orderRequestPending.current ||
+      quoteCurrent ||
+      !['payment', 'review'].includes(step)
+    )
+      return;
+    setSquareQuote(null);
+    setStep('delivery');
+    setError(
+      'Your delivery quote is missing, changed or expired. Choose a fresh delivery option before paying.'
+    );
+  }, [checkoutOpen, orderId, quoteCurrent, step, preparingSquare, paymentState]);
+
+  const returnToDelivery = () => {
+    setSquareQuote(null);
+    setStep('delivery');
+    setQuoteRefresh((value) => value + 1);
+    setError('Choose a fresh delivery option before paying.');
+  };
+
+  useEffect(() => {
+    if (!orderId)
+      setPaymentMethod(
+        mpesaEligible && mpesaEnabled && (country === 'MZ' || !squareEnabled) ? 'mpesa' : 'card'
+      );
+  }, [country, mpesaEligible, mpesaEnabled, squareEnabled, orderId]);
+
+  useEffect(() => {
+    if (!orderId && !mpesaPhoneEdited.current)
+      setMpesaPhone(normalizeMpesaPhone(phone) ? phone : '');
+  }, [phone, orderId]);
 
   const index = checkoutSteps.indexOf(step);
-  const next = () => {
+  const next = async () => {
+    if (savingAddressRef.current) return;
     setError('');
     if (
       step === 'contact' &&
-      (!name.trim() || !email.includes('@') || !/^(84|85)\d{7}$/.test(phone.replace(/\D/g, '')))
+      (!name.trim() || !email.includes('@') || !internationalPhoneIsValid(phone))
     ) {
       setError('Add your name, email and a valid phone number.');
       return;
     }
     if (
       step === 'delivery' &&
-      (!address.trim() || !city.trim() || !province.trim() || !selectedShipping)
+      (!address.trim() ||
+        !localArea.trim() ||
+        !city.trim() ||
+        !province.trim() ||
+        !postalCode.trim())
     ) {
       setError('Add a complete delivery address.');
       return;
     }
-    if (step === 'payment') setStep('review');
-    else if (step === 'contact') setStep('delivery');
+    if (step === 'delivery' && !selectedShipping) {
+      setError('Choose an available delivery service.');
+      return;
+    }
+    if (['delivery', 'payment'].includes(step) && !orderId && !quoteCurrent) {
+      returnToDelivery();
+      return;
+    }
+    if (step === 'payment' && paymentMethod === 'mpesa' && (!mpesaEligible || !mpesaEnabled)) {
+      setError(
+        'M-Pesa needs a positive MZN total with at most two decimal places and must be enabled for this store.'
+      );
+      return;
+    }
+    if (step === 'payment' && paymentMethod === 'mpesa' && !normalizeMpesaPhone(mpesaPhone)) {
+      setError(
+        squareEnabled
+          ? 'Enter a Mozambique M-Pesa number starting with +258 84 or +258 85, or choose card payment.'
+          : 'Enter a Mozambique M-Pesa number starting with +258 84 or +258 85.'
+      );
+      return;
+    }
+    if (step === 'payment' && paymentMethod !== 'mpesa' && !squareEnabled) {
+      setError('Square is currently unavailable. No price was rounded and no payment was started.');
+      return;
+    }
+    if (step === 'delivery' && saveAddress && identity.signedIn && !orderId) {
+      const generation = checkoutGeneration.current;
+      savingAddressRef.current = true;
+      setSavingAddress(true);
+      try {
+        const existing = identity.addresses.find((entry) => entry.id === selectedAddressId);
+        const id = existing?.id || (newAddressId.current ||= globalThis.crypto.randomUUID());
+        const response = await fetch('/api/account/addresses', {
+          method: 'POST',
+          signal: AbortSignal.timeout(10000),
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            operation: 'SAVE',
+            id,
+            revision: existing?.revision ?? 0,
+            label: addressLabel,
+            is_default: defaultAddress,
+            details: {
+              name,
+              email,
+              phone,
+              address_line_1: address,
+              address_line_2: addressLine2,
+              local_area: localArea,
+              city,
+              province,
+              postal_code: postalCode,
+              country,
+              address_type: addressType,
+              delivery_notes: deliveryNotes,
+            },
+          }),
+        });
+        const result = await response.json().catch(() => null);
+        if (!response.ok) throw new Error('Save failed');
+        const updated = decodeSavedAddresses([result.address])[0];
+        if (!updated) throw new Error('Invalid address');
+        setIdentity((current) =>
+          current.signedIn
+            ? {
+                ...current,
+                addresses: [
+                  ...current.addresses
+                    .filter((entry) => entry.id !== updated.id)
+                    .map((entry) =>
+                      defaultAddress && entry.is_default
+                        ? { ...entry, is_default: false, revision: entry.revision + 1 }
+                        : entry
+                    ),
+                  updated,
+                ],
+              }
+            : current
+        );
+        setSelectedAddressId(updated.id);
+        setSaveAddress(false);
+        setSavedNotice('Address and delivery contact saved privately to your account.');
+        if (generation !== checkoutGeneration.current) return;
+      } catch {
+        setError(
+          'We couldn’t save this address. Try again, or untick “Save this address” to continue without saving.'
+        );
+        return;
+      } finally {
+        savingAddressRef.current = false;
+        setSavingAddress(false);
+      }
+    }
+    if (step === 'payment') {
+      setStep('review');
+      if (paymentMethod !== 'mpesa') void prepareSquare();
+    } else if (step === 'contact') setStep('delivery');
     else if (step === 'delivery') setStep('payment');
   };
 
   const back = () => {
+    if (savingAddressRef.current) return;
+    if (orderRequestPending.current || orderId) {
+      setError(
+        'This order is being reserved or already has fixed details. Complete or check this payment before starting another checkout.'
+      );
+      return;
+    }
     if (step === 'review') setStep('payment');
     else if (step === 'payment') setStep('delivery');
     else if (step === 'delivery') setStep('contact');
   };
 
-  const pay = async () => {
+  const createOrReuseOrder = async () => {
+    if (orderId) return orderId;
+    if (!quoteCurrent || !shippingQuoteIsCurrent(selectedShipping)) {
+      returnToDelivery();
+      throw new Error('Choose a fresh delivery option before paying.');
+    }
+    if (!cart.length || cart.some((line) => !line.listingId || line.quantity !== 1)) {
+      throw new Error('Each item must be a live listing with quantity one.');
+    }
+    let activeOrderId = orderId;
+    if (!activeOrderId) {
+      const attemptId = checkoutAttemptId || globalThis.crypto.randomUUID();
+      const secret = checkoutSecret || globalThis.crypto.randomUUID();
+      setCheckoutAttemptId(attemptId);
+      setCheckoutSecret(secret);
+      orderRequestPending.current = true;
+      try {
+        const orderResponse = await fetch('/api/checkout/orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            checkout_id: attemptId,
+            checkout_secret: secret,
+            name,
+            email,
+            phone,
+            address_line_1: address,
+            address_line_2: addressLine2,
+            postal_code: postalCode,
+            delivery_notes: deliveryNotes,
+            local_area: localArea,
+            address_type: addressType,
+            city,
+            province,
+            country,
+            shipping_method_code: selectedShipping!.code,
+            shipping_quote_id: selectedShipping!.quoteId,
+            items: cart.map((line) => ({
+              listingId: line.listingId,
+              size: line.size,
+              quantity: line.quantity,
+              displayedPrice: line.product.price,
+            })),
+          }),
+        });
+        const orderResult = await orderResponse.json().catch(() => null);
+        if (!orderResponse.ok) {
+          if (
+            orderResponse.status === 409 &&
+            /(?:shipping|delivery) quote/i.test(orderResult?.error ?? '')
+          )
+            returnToDelivery();
+          throw new Error(orderResult?.error || 'Could not reserve this order.');
+        }
+        activeOrderId = orderResult.orderId;
+        setOrderId(activeOrderId);
+        setReservedCart(cart.map((line) => ({ ...line, product: { ...line.product } })));
+        setOrderNumber(orderResult.orderNumber);
+        setConfirmedTotal(Number(orderResult.total));
+      } finally {
+        orderRequestPending.current = false;
+      }
+    }
+    return activeOrderId;
+  };
+
+  const prepareSquare = async () => {
+    if (preparingSquare) return;
+    setPreparingSquare(true);
     setError('');
+    try {
+      if (!squareEnabled) throw new Error('Card and Apple Pay payments are currently unavailable.');
+      const activeOrderId = await createOrReuseOrder();
+      const response = await fetch('/api/payments/square/quote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_id: activeOrderId }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Could not prepare secure payment.');
+      setSquareQuote(result);
+      setPaymentState('idle');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not prepare secure payment.');
+    } finally {
+      setPreparingSquare(false);
+    }
+  };
+
+  const handleSquareResult = (result: {
+    status?: string;
+    fulfillable?: boolean;
+    orderNumber?: string;
+  }) => {
+    if (result.status === 'PAID') {
+      setOrderNumber(result.orderNumber || orderNumber);
+      setPaymentState(result.fulfillable ? 'paid' : 'paidNeedsHelp');
+      setError('');
+      setStep('confirmation');
+      return true;
+    }
+    if (result.status === 'FAILED') {
+      setSquareQuote(null);
+      setPaymentState('failed');
+      setError('The payment was declined. You can try another card or Apple Pay.');
+      return true;
+    }
+    if (result.status === 'PENDING') {
+      setPaymentState('idle');
+      setError('The payment was not submitted. You can try again.');
+      return true;
+    }
+    return false;
+  };
+
+  const checkSquare = async (quote = squareQuote) => {
+    if (!quote || checkingSquare) return;
+    setCheckingSquare(true);
+    setPaymentState('processing');
+    try {
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        const response = await fetch('/api/payments/square/status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ order_id: quote.orderId, payment_id: quote.paymentId }),
+          cache: 'no-store',
+        });
+        const result = await response.json();
+        if (response.ok && handleSquareResult(result)) return;
+        if (!response.ok) throw new Error(result.error || 'Payment status is unavailable.');
+        if (attempt < 5) await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+      setPaymentState('timedOut');
+      setError('Payment confirmation is taking longer. Check its status before paying again.');
+    } catch {
+      setPaymentState('timedOut');
+      setError('We could not confirm the payment yet. Check its status before paying again.');
+    } finally {
+      setCheckingSquare(false);
+    }
+  };
+
+  const submitSquare = async (token: string) => {
+    if (!squareQuote) return;
+    setPaymentState('processing');
+    setError('');
+    try {
+      const response = await fetch('/api/payments/square', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          order_id: squareQuote.orderId,
+          payment_id: squareQuote.paymentId,
+          source_id: token,
+        }),
+      });
+      const result = await response.json();
+      if (response.ok && handleSquareResult(result)) return;
+      if (response.status === 402) {
+        setPaymentState('failed');
+        setSquareQuote(null);
+        setError(result.error || 'The payment was declined. Please try another card.');
+        return;
+      }
+      await checkSquare(squareQuote);
+    } catch {
+      setPaymentState('timedOut');
+      setError('The payment result is not confirmed. Check its status before paying again.');
+    }
+  };
+
+  const checkMpesa = async (activeOrderId: string, paymentId = mpesaPaymentId) => {
+    setError('');
+    setMpesaStatusNotice('');
+    setPaymentState('waiting');
+    try {
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        const response = await fetch('/api/payments/mpesa/status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            order_id: activeOrderId,
+            ...(paymentId ? { payment_id: paymentId } : {}),
+          }),
+          cache: 'no-store',
+        });
+        const status = await response.json().catch(() => null);
+        if (status?.orderNumber) setOrderNumber(status.orderNumber);
+        if (status && typeof status.paidAmount === 'number') {
+          setPaymentProgress((previous) => ({
+            ...previous,
+            paidAmount: status.paidAmount,
+            remainingAmount: status.remainingAmount,
+            nextInstallmentAmount: status.nextInstallmentAmount,
+            installmentNumber: status.installmentNumber,
+            installmentCount: status.installmentCount,
+          }));
+        }
+        if (
+          status?.reason === 'PROVIDER_UNAVAILABLE' ||
+          status?.reason === 'PAYMENT_RECORD_PENDING'
+        ) {
+          setPaymentState('timedOut');
+          setMpesaStatusNotice(status.message);
+          return;
+        }
+        if (status?.status === 'PARTIALLY_PAID') {
+          setMpesaPaymentId('');
+          setPaymentState('partial');
+          return;
+        }
+        if (status?.status === 'PAID') {
+          setPaymentState(status.fulfillable ? 'paid' : 'paidNeedsHelp');
+          setStep('confirmation');
+          return;
+        }
+        if (status?.status === 'INSTALLMENT_FAILED') {
+          setMpesaPaymentId('');
+          setPaymentState('failed');
+          setError(
+            status.message ||
+              'This installment was not completed. Earlier confirmed payments remain recorded.'
+          );
+          return;
+        }
+        if (status?.status === 'FAILED' || status?.status === 'CANCELLED') {
+          setPaymentState('failed');
+          setError('The M-Pesa request was not completed. No order was marked paid.');
+          setMpesaPaymentId('');
+          setCheckoutAttemptId('');
+          setCheckoutSecret('');
+          setOrderId('');
+          setReservedCart(null);
+          setConfirmedTotal(null);
+          returnToDelivery();
+          return;
+        }
+        if (!response.ok) throw new Error('Payment status is unavailable.');
+        if (attempt < 11) await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+      setPaymentState('timedOut');
+    } catch {
+      // A failed status check is not a declined payment and must never enable
+      // another initiation, including after the reservation has expired.
+      setPaymentState('timedOut');
+      setMpesaStatusNotice(
+        'We could not check this payment yet. Check status again or contact support before making another payment.'
+      );
+    }
+  };
+
+  const pay = async () => {
+    if (paymentState === 'timedOut' && orderId) {
+      await checkMpesa(orderId);
+      return;
+    }
+    setError('');
+    setMpesaStatusNotice('');
     if (paymentMethod === 'card' && !squareEnabled) {
       setError('Card payment is not enabled for this store. Choose M-Pesa.');
       return;
@@ -566,12 +1203,19 @@ function CheckoutSheet() {
       setError('M-Pesa is not active for this store. No payment request was sent.');
       return;
     }
-    if (!/^(84|85)\d{7}$/.test(phone.replace(/\D/g, ''))) {
+    if (!mpesaEligible) {
+      setError(
+        'M-Pesa needs a positive MZN total with at most two decimal places. Your prices are not rounded.'
+      );
+      return;
+    }
+    const walletPhone = normalizeMpesaPhone(mpesaPhone);
+    if (!walletPhone) {
       setError('Enter the M-Pesa number that should receive the payment request.');
       return;
     }
-    if (!selectedShipping) {
-      setError('Choose an available delivery method before paying.');
+    if (!orderId && !quoteCurrent) {
+      returnToDelivery();
       return;
     }
     if (!cart.length || cart.some((line) => !line.listingId)) {
@@ -586,104 +1230,57 @@ function CheckoutSheet() {
     }
 
     setPaymentState('processing');
+    let requestSubmitted = false;
     try {
-      let activeOrderId = orderId;
-      if (!activeOrderId) {
-        const attemptId = checkoutAttemptId || globalThis.crypto.randomUUID();
-        const secret = checkoutSecret || globalThis.crypto.randomUUID();
-        setCheckoutAttemptId(attemptId);
-        setCheckoutSecret(secret);
-        const orderResponse = await fetch('/api/checkout/orders', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            checkout_id: attemptId,
-            checkout_secret: secret,
-            name,
-            email,
-            phone: phone.replace(/\D/g, ''),
-            address_line_1: address,
-            address_line_2: addressLine2,
-            postal_code: postalCode,
-            delivery_notes: deliveryNotes,
-            city,
-            province,
-            country: 'MZ',
-            shipping_method_code: selectedShipping.code,
-            items: cart.map((line) => ({
-              listingId: line.listingId,
-              size: line.size,
-              quantity: line.quantity,
-              displayedPrice: line.product.price,
-            })),
-          }),
-        });
-        const orderResult = await orderResponse.json().catch(() => null);
-        if (!orderResponse.ok)
-          throw new Error(orderResult?.error || 'Could not reserve this order.');
-        activeOrderId = orderResult.orderId;
-        setOrderId(activeOrderId);
-        setOrderNumber(orderResult.orderNumber);
-        setConfirmedTotal(Number(orderResult.total));
-      }
+      const activeOrderId = await createOrReuseOrder();
 
+      requestSubmitted = true;
       const initiateResponse = await fetch('/api/payments/mpesa/initiate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           order_id: activeOrderId,
-          phone: phone.replace(/\D/g, ''),
+          phone: walletPhone,
         }),
       });
       const initiation = await initiateResponse.json().catch(() => null);
+      if (initiation && typeof initiation.paidAmount === 'number') {
+        setPaymentProgress({
+          paidAmount: initiation.paidAmount,
+          remainingAmount: initiation.remainingAmount,
+          nextInstallmentAmount: initiation.nextInstallmentAmount,
+          installmentAmount: initiation.installmentAmount,
+          installmentNumber: initiation.installmentNumber,
+          installmentCount: initiation.installmentCount,
+        });
+      }
       if (initiation?.status === 'FAILED') {
         setPaymentState('failed');
         setError(initiation.message || 'The M-Pesa request could not be started.');
-        setCheckoutAttemptId('');
-        setCheckoutSecret('');
-        setOrderId('');
+        if (!initiation.partial) {
+          setCheckoutAttemptId('');
+          setCheckoutSecret('');
+          setOrderId('');
+          setReservedCart(null);
+          setConfirmedTotal(null);
+          returnToDelivery();
+        }
         return;
       }
       if (!initiateResponse.ok)
         throw new Error(initiation?.error || 'Could not start the M-Pesa request.');
 
       if (initiation.orderNumber) setOrderNumber(initiation.orderNumber);
-      setPaymentState('waiting');
-
-      for (let attempt = 0; attempt < 12; attempt += 1) {
-        const statusResponse = await fetch(
-          `/api/payments/${initiation.paymentId}/status?orderId=${activeOrderId}`,
-          { cache: 'no-store' }
-        );
-        const status = await statusResponse.json().catch(() => null);
-        if (status?.status === 'PAID') {
-          setOrderNumber(status.orderNumber || orderNumber);
-          setPaymentState(status.fulfillable ? 'paid' : 'paidNeedsHelp');
-          setStep('confirmation');
-          return;
-        }
-        if (status?.status === 'FAILED' || status?.status === 'CANCELLED') {
-          setPaymentState('failed');
-          setError(
-            'The M-Pesa request was not completed. You can try again; no order was marked paid.'
-          );
-          setCheckoutAttemptId('');
-          setCheckoutSecret('');
-          setOrderId('');
-          return;
-        }
-        if (!statusResponse.ok && statusResponse.status !== 202) {
-          throw new Error(status?.error || 'We could not check the payment status yet.');
-        }
-        if (attempt < 11) await new Promise((resolve) => setTimeout(resolve, 5000));
-      }
-
-      setPaymentState('timedOut');
-      setError(
-        'Still waiting for payment confirmation. Check again; no second payment request will be sent.'
-      );
+      if (initiation.paymentId) setMpesaPaymentId(initiation.paymentId);
+      await checkMpesa(activeOrderId, initiation.paymentId || '');
     } catch (paymentError) {
-      setPaymentState('failed');
+      setPaymentState(requestSubmitted ? 'timedOut' : 'failed');
+      if (requestSubmitted) {
+        setMpesaStatusNotice(
+          'The payment request outcome is not confirmed. Check its status before making another payment.'
+        );
+        return;
+      }
       setError(
         paymentError instanceof Error
           ? paymentError.message
@@ -694,12 +1291,18 @@ function CheckoutSheet() {
 
   const close = () => {
     if (step === 'confirmation') {
-      clearCart();
+      if (reservedCart) reservedCart.forEach((line) => removeFromCart(line.product.id, line.size));
+      else clearCart();
+      setReservedCart(null);
       setCheckoutAttemptId('');
       setCheckoutSecret('');
       setOrderId('');
       setOrderNumber('');
       setConfirmedTotal(null);
+      setPaymentProgress(null);
+      setMpesaPaymentId('');
+      setMpesaStatusNotice('');
+      setSquareQuote(null);
       setPaymentState('idle');
       setStep('contact');
     }
@@ -737,28 +1340,48 @@ function CheckoutSheet() {
         {step === 'contact' && (
           <div className="mt-8">
             <p className="text-xs font-bold uppercase tracking-[0.14em] text-black/45">
-              Guest checkout
+              {identity.signedIn ? 'Your checkout' : 'Guest checkout'}
             </p>
             <h2 className="mt-2 text-3xl font-black tracking-[-0.05em]">Where can we reach you?</h2>
             <p className="mt-2 text-sm leading-6 text-black/55">
-              No account required. We’ll send order updates here.
+              {identity.signedIn
+                ? 'Your account details are filled in where available. Check the delivery contact before continuing.'
+                : 'No account required. We’ll send order updates here.'}
             </p>
             <div className="mt-7 space-y-4">
-              <Field label="Full name" value={name} onChange={setName} autoComplete="name" />
+              {identityLoading && (
+                <p role="status" className="text-xs text-neutral-600">
+                  Looking for your saved checkout details…
+                </p>
+              )}
+              <Field
+                label="Full name"
+                value={name}
+                onChange={(value) => {
+                  contactEdited.current.name = true;
+                  setName(value);
+                }}
+                autoComplete="shipping name"
+              />
               <Field
                 label="Email"
                 type="email"
                 value={email}
-                onChange={setEmail}
-                autoComplete="email"
+                onChange={(value) => {
+                  contactEdited.current.email = true;
+                  setEmail(value);
+                }}
+                autoComplete="shipping email"
               />
               <Field
                 label="Phone"
                 value={phone}
-                onChange={setPhone}
-                prefix="+258"
-                placeholder="84 XXX XXXX"
-                autoComplete="tel"
+                onChange={(value) => {
+                  contactEdited.current.phone = true;
+                  setPhone(value);
+                }}
+                placeholder="+258 84 XXX XXXX"
+                autoComplete="shipping tel"
               />
             </div>
           </div>
@@ -768,40 +1391,205 @@ function CheckoutSheet() {
           <div className="mt-8">
             <p className="text-xs font-bold uppercase tracking-[0.14em] text-black/45">Delivery</p>
             <h2 className="mt-2 text-3xl font-black tracking-[-0.05em]">Where should it go?</h2>
-            <div className="mt-7 space-y-4">
+            <fieldset disabled={savingAddress} className="mt-7 space-y-4">
+              {identity.signedIn && (
+                <div className="rounded-2xl border border-black/10 bg-white p-4">
+                  <label className="block text-sm font-bold">
+                    Saved delivery address
+                    <select
+                      aria-label="Saved delivery address"
+                      value={selectedAddressId}
+                      disabled={savingAddress || Boolean(orderId)}
+                      onChange={(event) => {
+                        addressEdited.current = true;
+                        const entry = identity.addresses.find(
+                          (item) => item.id === event.target.value
+                        );
+                        if (entry) applySavedAddress(entry);
+                        else {
+                          setSelectedAddressId('');
+                          setAddress('');
+                          setAddressLine2('');
+                          setLocalArea('');
+                          setCity('');
+                          setProvince('');
+                          setPostalCode('');
+                          setDeliveryNotes('');
+                          setSaveAddress(false);
+                          setDefaultAddress(false);
+                          setAddressLabel('Home');
+                          newAddressId.current = '';
+                        }
+                      }}
+                      className="mt-2 w-full rounded-xl border border-black/15 bg-white p-3 text-sm font-normal"
+                    >
+                      <option value="">Enter a new address</option>
+                      {identity.addresses.map((entry) => (
+                        <option key={entry.id} value={entry.id}>
+                          {entry.label}
+                          {entry.is_default ? ' · Default' : ''} — {entry.details.city}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <p className="mt-2 text-xs leading-5 text-neutral-600">
+                    Only your account can see these addresses. Selecting a different destination
+                    refreshes delivery prices.
+                  </p>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="mb-2 block text-[11px] font-bold uppercase tracking-[0.12em] text-black/55">
+                    Country
+                  </span>
+                  <select
+                    value={country}
+                    onChange={(event) => {
+                      addressEdited.current = true;
+                      setCountry(event.target.value);
+                      setProvince('');
+                    }}
+                    autoComplete="shipping country"
+                    className="h-13 w-full rounded-2xl border border-black/15 bg-white px-4 text-sm outline-none focus:border-black focus:ring-2 focus:ring-acid/70"
+                  >
+                    {shippingCountries.map((option) => (
+                      <option key={option.code} value={option.code}>
+                        {option.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="mb-2 block text-[11px] font-bold uppercase tracking-[0.12em] text-black/55">
+                    Address type
+                  </span>
+                  <select
+                    value={addressType}
+                    onChange={(event) =>
+                      editAddress(
+                        (value) => setAddressType(value as 'residential' | 'business'),
+                        event.target.value
+                      )
+                    }
+                    className="h-13 w-full rounded-2xl border border-black/15 bg-white px-4 text-sm outline-none focus:border-black focus:ring-2 focus:ring-acid/70"
+                  >
+                    <option value="residential">Residential</option>
+                    <option value="business">Business</option>
+                  </select>
+                </label>
+              </div>
               <Field
                 label="Address line 1"
                 value={address}
-                onChange={setAddress}
-                autoComplete="address-line1"
+                onChange={(value) => editAddress(setAddress, value)}
+                autoComplete="shipping address-line1"
               />
               <Field
                 label="Address line 2 (optional)"
                 value={addressLine2}
-                onChange={setAddressLine2}
-                autoComplete="address-line2"
+                onChange={(value) => editAddress(setAddressLine2, value)}
+                autoComplete="shipping address-line2"
+              />
+              <Field
+                label="Suburb / local area"
+                value={localArea}
+                onChange={(value) => editAddress(setLocalArea, value)}
+                autoComplete="shipping address-level3"
               />
               <div className="grid grid-cols-2 gap-3">
-                <Field label="City" value={city} onChange={setCity} autoComplete="address-level2" />
                 <Field
-                  label="Province"
-                  value={province}
-                  onChange={setProvince}
-                  autoComplete="address-level1"
+                  label="City"
+                  value={city}
+                  onChange={(value) => editAddress(setCity, value)}
+                  autoComplete="shipping address-level2"
                 />
+                {country === 'ZA' ? (
+                  <label className="block text-xs font-semibold">
+                    Province
+                    <select
+                      aria-label="Province"
+                      autoComplete="shipping address-level1"
+                      value={province}
+                      onChange={(event) => editAddress(setProvince, event.target.value)}
+                      className="mt-2 w-full rounded-xl border border-black/15 bg-white p-3"
+                    >
+                      <option value="">Choose province</option>
+                      {southAfricaProvinces.map((value) => (
+                        <option key={value}>{value}</option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <Field
+                    label="Province"
+                    value={province}
+                    onChange={(value) => editAddress(setProvince, value)}
+                    autoComplete="shipping address-level1"
+                  />
+                )}
               </div>
               <Field
-                label="Postal code (optional)"
+                label="Postal code"
                 value={postalCode}
-                onChange={setPostalCode}
-                autoComplete="postal-code"
+                onChange={(value) => editAddress(setPostalCode, value)}
+                autoComplete="shipping postal-code"
               />
               <Field
                 label="Delivery notes (optional)"
                 value={deliveryNotes}
-                onChange={setDeliveryNotes}
+                onChange={(value) => editAddress(setDeliveryNotes, value)}
               />
-              <p className="text-xs text-black/50">Country: Mozambique</p>
+              {identity.signedIn && (
+                <div className="rounded-2xl bg-[#eef4df] p-4 text-sm text-black">
+                  <label className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      className="mt-1 h-4 w-4 accent-black"
+                      checked={saveAddress}
+                      onChange={(event) => setSaveAddress(event.target.checked)}
+                      disabled={savingAddress}
+                    />
+                    <span>
+                      Save this address{selectedAddressId ? ' and my changes' : ''} for future
+                      checkouts
+                    </span>
+                  </label>
+                  {saveAddress && (
+                    <div className="mt-4 space-y-3">
+                      <Field
+                        label="Address label"
+                        value={addressLabel}
+                        onChange={setAddressLabel}
+                        placeholder="Home or work"
+                      />
+                      <label className="flex gap-3">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-black"
+                          checked={defaultAddress}
+                          onChange={(event) => setDefaultAddress(event.target.checked)}
+                        />
+                        <span>Use as my default delivery address</span>
+                      </label>
+                      <p className="text-xs leading-5">
+                        Saves the delivery name, email, phone and address to your account. This does
+                        not change your verified sign-in details or any existing order.
+                      </p>
+                    </div>
+                  )}
+                  {savingAddress && (
+                    <p role="status" className="mt-3">
+                      Saving your address…
+                    </p>
+                  )}
+                </div>
+              )}
+              {savedNotice && (
+                <p role="status" className="text-sm text-emerald-800">
+                  {savedNotice}
+                </p>
+              )}
               <fieldset>
                 <legend className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-black/55">
                   Delivery method
@@ -811,7 +1599,7 @@ function CheckoutSheet() {
                 )}
                 {!shippingLoading && shippingMethods.length === 0 && (
                   <p className="rounded-2xl bg-amber-50 p-4 text-sm text-amber-900">
-                    No delivery method is currently available for this province.
+                    {shippingError || 'Complete the address to retrieve available delivery prices.'}
                   </p>
                 )}
                 <div className="space-y-2">
@@ -834,14 +1622,38 @@ function CheckoutSheet() {
                             Estimated {method.estimated_min_days}–{method.estimated_max_days}{' '}
                             business days
                           </span>
+                          {method.description && (
+                            <span className="mt-1 block text-xs text-black/45">
+                              {method.description}
+                            </span>
+                          )}
                         </span>
                       </span>
                       <strong className="text-sm">{formatPrice(method.price, 'MZN')}</strong>
                     </label>
                   ))}
                 </div>
+                {shippingMethods.length > 0 && (
+                  <p className="mt-3 text-[11px] leading-5 text-black/45">
+                    {selectedShipping?.source === 'internet_express'
+                      ? `Live Internet Express price, converted from ZAR to MZN. ${parcelBasis}`
+                      : 'Store-approved delivery or pickup price in MZN.'}
+                  </p>
+                )}
+                {addressComplete && !shippingLoading && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setError('');
+                      setQuoteRefresh((value) => value + 1);
+                    }}
+                    className="mt-4 min-h-11 text-sm font-semibold underline underline-offset-4"
+                  >
+                    Refresh delivery options
+                  </button>
+                )}
               </fieldset>
-            </div>
+            </fieldset>
           </div>
         )}
 
@@ -852,36 +1664,66 @@ function CheckoutSheet() {
             </p>
             <h2 className="mt-2 text-3xl font-black tracking-[-0.05em]">Choose how to pay.</h2>
             <div className="mt-7 space-y-3">
-              <PaymentOption
-                selected={paymentMethod === 'mpesa'}
-                onClick={() => setPaymentMethod('mpesa')}
-                icon={<Smartphone className="h-5 w-5" />}
-                title="M-Pesa"
-                detail="Primary payment method in Mozambique"
-              />
-              {squareEnabled && (
+              {mpesaEnabled && (
                 <PaymentOption
-                  selected={paymentMethod === 'card'}
-                  onClick={() => setPaymentMethod('card')}
-                  icon={<LockKeyhole className="h-5 w-5" />}
-                  title="Card"
-                  detail="Secure international card payment"
+                  selected={paymentMethod === 'mpesa'}
+                  disabled={!mpesaEligible}
+                  onClick={() => setPaymentMethod('mpesa')}
+                  icon={<Smartphone className="h-5 w-5" />}
+                  title="M-Pesa"
+                  detail={
+                    mpesaEligible
+                      ? 'Mozambique M-Pesa number · Any delivery destination'
+                      : 'Unavailable for this amount · Contact support'
+                  }
                 />
               )}
+              {squareEnabled && (
+                <>
+                  <PaymentOption
+                    selected={paymentMethod === 'card'}
+                    onClick={() => setPaymentMethod('card')}
+                    icon={<LockKeyhole className="h-5 w-5" />}
+                    title="Card"
+                    detail="Visa, Mastercard and more · Secured by Square"
+                  />
+                  <PaymentOption
+                    selected={paymentMethod === 'applePay'}
+                    onClick={() => setPaymentMethod('applePay')}
+                    icon={<LockKeyhole className="h-5 w-5" />}
+                    title="Apple Pay"
+                    detail="Pay with your Apple wallet on supported devices"
+                  />
+                </>
+              )}
             </div>
-            {paymentMethod === 'mpesa' && (
+            {mpesaEnabled && !mpesaEligible && (
+              <p className="mt-4 rounded-xl bg-white p-3 text-sm text-black/70" role="status">
+                This total cannot be paid by M-Pesa. Use a positive MZN amount with at most two
+                decimal places. Contact support@streetculturevault.com if you need help.
+              </p>
+            )}
+            {paymentMethod === 'mpesa' && mpesaEnabled && mpesaEligible && (
               <div className="mt-5 rounded-2xl bg-[#efede5] p-5">
                 <p className="text-sm font-bold">M-Pesa phone number</p>
                 <p className="mt-1 text-xs leading-5 text-black/50">
                   We’ll send an M-Pesa prompt to this number. Confirm it on your phone with your
                   M-Pesa PIN.
                 </p>
+                <p className="mt-2 text-xs leading-5 text-black/65">
+                  Use a Mozambique Vodacom M-Pesa wallet starting with +258 84 or +258 85, wherever
+                  the order is delivered. Your delivery contact number stays unchanged.
+                </p>
                 <div className="mt-4">
                   <Field
-                    value={phone}
-                    onChange={setPhone}
-                    prefix="+258"
-                    placeholder="84 XXX XXXX"
+                    label="M-Pesa wallet number"
+                    type="tel"
+                    value={mpesaPhone}
+                    onChange={(value) => {
+                      mpesaPhoneEdited.current = true;
+                      setMpesaPhone(value);
+                    }}
+                    placeholder="+258 84 XXX XXXX"
                     autoComplete="tel"
                   />
                 </div>
@@ -894,9 +1736,12 @@ function CheckoutSheet() {
               </p>
             )}
             {!squareEnabled && (
-              <p className="mt-5 text-xs leading-5 text-black/45">
-                International card payment will appear only when a supported merchant gateway is
-                configured.
+              <p
+                className="mt-5 rounded-xl border border-black/10 bg-white p-3 text-xs leading-5 text-black/55"
+                role="status"
+              >
+                Card and wallet payments are temporarily unavailable. You can pay with an eligible
+                Mozambique M-Pesa wallet.
               </p>
             )}
           </div>
@@ -925,7 +1770,7 @@ function CheckoutSheet() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-bold">{line.product.name}</p>
                     <p className="text-xs text-black/45">
-                      {line.size} · Qty {line.quantity}
+                      {formatProductSize(line.size, line.product.sizeSystem)} · Qty {line.quantity}
                     </p>
                   </div>
                   <p className="text-sm font-bold">
@@ -941,20 +1786,76 @@ function CheckoutSheet() {
               </div>
               <div className="flex justify-between text-black/55">
                 <span>Delivery</span>
-                <span>{formatPrice(shipping, 'MZN')}</span>
+                <span>{deliveryReady ? formatPrice(shipping, 'MZN') : 'Not selected'}</span>
               </div>
               <p className="text-xs text-black/45">
                 {selectedShipping?.name ?? 'Choose delivery method'} · {address}, {city}, {province}
+                , {shippingCountries.find((option) => option.code === country)?.name ?? country}
               </p>
               <div className="flex justify-between border-t border-black/10 pt-3 text-lg font-black">
                 <span>Total</span>
-                <span>{formatPrice(total, 'MZN')}</span>
+                <span>
+                  {deliveryReady ? formatPrice(displayedPaymentTotal, 'MZN') : 'Pending delivery'}
+                </span>
               </div>
-              <p className="text-right text-xs text-black/45">
-                Display estimate: <DisplayPrice amount={total} /> · M-Pesa charges MZN.
-              </p>
+              {deliveryReady && (
+                <p className="text-right text-xs text-black/45">
+                  Display estimate: <DisplayPrice amount={displayedPaymentTotal} /> · Checkout total
+                  is held in MZN.
+                </p>
+              )}
             </div>
-            {['waiting', 'processing'].includes(paymentState) && (
+            {!orderId &&
+              !preparingSquare &&
+              !['processing', 'waiting', 'timedOut'].includes(paymentState) && (
+                <div className="mt-4 flex flex-wrap gap-4 text-xs font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      returnToDelivery();
+                      setError('');
+                    }}
+                    className="min-h-11 underline underline-offset-4"
+                  >
+                    Edit delivery
+                  </button>
+                  <button
+                    type="button"
+                    onClick={back}
+                    className="min-h-11 underline underline-offset-4"
+                  >
+                    Change payment method
+                  </button>
+                </div>
+              )}
+            {paymentMethod === 'mpesa' && (
+              <p className="mt-5 rounded-xl bg-white p-4 text-sm text-black/75">
+                M-Pesa wallet: <strong>{mpesaPhone}</strong>. Your delivery contact remains {phone}.
+              </p>
+            )}
+            {paymentMethod === 'mpesa' && installmentPlan.length > 1 && paymentState === 'idle' && (
+              <div className="mt-6 rounded-2xl border border-black/10 bg-[#efede5] p-5">
+                <p className="text-sm font-black">
+                  Split into {installmentPlan.length} M-Pesa payments
+                </p>
+                <p className="mt-1 text-xs leading-5 text-black/55">
+                  M-Pesa allows up to {formatPrice(MPESA_MAX_TRANSACTION_MZN, 'MZN')} per
+                  transaction. We’ll request one payment at a time and confirm the order only after
+                  every installment succeeds.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {installmentPlan.map((amount, planIndex) => (
+                    <span
+                      key={`${planIndex}-${amount}`}
+                      className="rounded-full bg-white px-3 py-1 text-xs font-bold"
+                    >
+                      {planIndex + 1}: {formatPrice(amount, 'MZN')}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {paymentMethod === 'mpesa' && ['waiting', 'processing'].includes(paymentState) && (
               <div
                 className="mt-6 rounded-2xl border border-acid bg-acid/20 p-5 text-center"
                 role="status"
@@ -962,18 +1863,74 @@ function CheckoutSheet() {
               >
                 <LoaderCircle className="mx-auto h-6 w-6 animate-spin" />
                 <p className="mt-3 text-sm font-black uppercase tracking-[0.12em]">
-                  {paymentState === 'waiting' ? 'Check your phone' : 'Preparing your request'}
+                  {paymentState === 'waiting'
+                    ? paymentProgress && paymentProgress.installmentCount > 1
+                      ? `Approve payment ${paymentProgress.installmentNumber} of ${paymentProgress.installmentCount}`
+                      : 'Check your phone'
+                    : 'Preparing your request'}
                 </p>
                 <p className="mt-1 text-xs text-black/55">
-                  Approve the M-Pesa request on your device.
+                  Approve{' '}
+                  {paymentProgress?.installmentAmount
+                    ? formatPrice(paymentProgress.installmentAmount, 'MZN')
+                    : 'the M-Pesa request'}{' '}
+                  on your device.
                 </p>
               </div>
             )}
-            {paymentState === 'timedOut' && (
-              <p className="mt-6 rounded-2xl bg-amber-50 p-5 text-sm text-amber-900" role="status">
-                Confirmation is taking longer than expected. You can check again without sending
-                another request to your phone.
-              </p>
+            {paymentState === 'partial' && paymentProgress && (
+              <div
+                className="mt-6 rounded-2xl border border-[#126347]/25 bg-emerald-50 p-5"
+                role="status"
+              >
+                <p className="text-sm font-black text-[#126347]">Installment confirmed</p>
+                <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <span className="block text-black/50">Paid so far</span>
+                    <strong className="mt-1 block text-sm">
+                      {formatPrice(paymentProgress.paidAmount, 'MZN')}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="block text-black/50">Still due</span>
+                    <strong className="mt-1 block text-sm">
+                      {formatPrice(paymentProgress.remainingAmount, 'MZN')}
+                    </strong>
+                  </div>
+                </div>
+                <p className="mt-3 text-xs leading-5 text-black/60">
+                  Your confirmed payment is recorded. Continue when ready to receive the next M-Pesa
+                  prompt for {formatPrice(paymentProgress.nextInstallmentAmount, 'MZN')}.
+                </p>
+              </div>
+            )}
+            {paymentState === 'timedOut' && paymentMethod === 'mpesa' && (
+              <div
+                className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900"
+                role="status"
+              >
+                <p className="font-bold">Payment not yet confirmed</p>
+                <p className="mt-2">
+                  {mpesaStatusNotice ||
+                    'Confirmation is taking longer than expected. Check status again; no second payment request will be sent.'}
+                </p>
+                {orderNumber && (
+                  <p className="mt-3 font-semibold">Order reference: {orderNumber}</p>
+                )}
+                {paymentProgress?.installmentAmount && (
+                  <p className="mt-2">
+                    Awaiting confirmation for payment {paymentProgress.installmentNumber} of{' '}
+                    {paymentProgress.installmentCount}:{' '}
+                    {formatPrice(paymentProgress.installmentAmount, 'MZN')}.
+                  </p>
+                )}
+                <a
+                  href="mailto:support@streetculturevault.com"
+                  className="mt-3 inline-block underline underline-offset-4"
+                >
+                  Contact support before paying again
+                </a>
+              </div>
             )}
           </div>
         )}
@@ -1007,18 +1964,28 @@ function CheckoutSheet() {
                   className="mb-3 flex justify-between gap-4 border-b border-black/10 pb-3"
                 >
                   <span>
-                    {line.product.name} · {line.size}
+                    {line.product.name} · {formatProductSize(line.size, line.product.sizeSystem)}
                   </span>
                   <strong>{formatPrice(line.product.price, 'MZN')}</strong>
                 </div>
               ))}
               <div className="flex justify-between">
                 <span className="text-black/50">Amount paid</span>
-                <strong>{formatPrice(confirmedTotal ?? total, 'MZN')}</strong>
+                <strong>
+                  {paymentMethod !== 'mpesa' && squareQuote
+                    ? formatSquareAmount(squareQuote.amount)
+                    : formatPrice(confirmedTotal ?? total, 'MZN')}
+                </strong>
               </div>
               <div className="mt-3 flex justify-between">
                 <span className="text-black/50">Payment</span>
-                <strong>{paymentMethod === 'mpesa' ? 'M-Pesa' : 'Card'}</strong>
+                <strong>
+                  {paymentMethod === 'mpesa'
+                    ? 'M-Pesa'
+                    : paymentMethod === 'applePay'
+                      ? 'Apple Pay'
+                      : 'Card'}
+                </strong>
               </div>
               <div className="mt-3 flex justify-between gap-4">
                 <span className="text-black/50">Delivery</span>
@@ -1033,7 +2000,7 @@ function CheckoutSheet() {
             <button
               type="button"
               onClick={close}
-              className="h-13 mt-7 w-full rounded-full bg-black text-xs font-bold uppercase tracking-[0.14em] text-white transition hover:bg-acid hover:text-black"
+              className="mt-7 h-13 w-full rounded-full bg-black text-xs font-bold uppercase tracking-[0.14em] text-white transition hover:bg-acid hover:text-black"
             >
               Continue shopping
             </button>
@@ -1061,7 +2028,7 @@ function CheckoutSheet() {
               <button
                 type="button"
                 onClick={back}
-                className="h-13 w-13 grid shrink-0 place-items-center rounded-full border border-black/15 bg-white"
+                className="grid h-13 w-13 shrink-0 place-items-center rounded-full border border-black/15 bg-white"
                 aria-label="Previous checkout step"
               >
                 <ArrowLeft className="h-4 w-4" />
@@ -1070,19 +2037,80 @@ function CheckoutSheet() {
             <button
               type="button"
               onClick={next}
-              className="h-13 flex flex-1 items-center justify-center gap-2 rounded-full bg-black text-xs font-bold uppercase tracking-[0.14em] text-white transition hover:bg-acid hover:text-black"
+              disabled={
+                savingAddress ||
+                (step === 'delivery' && shippingLoading) ||
+                (step === 'payment' && !squareEnabled && (!mpesaEnabled || !mpesaEligible))
+              }
+              className="flex h-13 flex-1 items-center justify-center gap-2 rounded-full bg-black text-xs font-bold uppercase tracking-[0.14em] text-white transition hover:bg-acid hover:text-black"
             >
-              Continue <ArrowRight className="h-4 w-4" />
+              {step === 'delivery' && shippingLoading ? 'Getting courier prices' : 'Continue'}{' '}
+              <ArrowRight className="h-4 w-4" />
             </button>
           </div>
         )}
-        {step === 'review' && (
+        {step === 'review' && deliveryReady && paymentMethod !== 'mpesa' && squareEnabled && (
+          <>
+            {preparingSquare && (
+              <p className="mt-6 flex items-center gap-2 text-sm" role="status">
+                <LoaderCircle className="h-4 w-4 animate-spin" /> Preparing secure checkout…
+              </p>
+            )}
+            {squareQuote && ['idle', 'failed'].includes(paymentState) && !preparingSquare && (
+              <>
+                <SquarePaymentForm
+                  method={paymentMethod}
+                  quote={squareQuote}
+                  contact={{ name, email, phone, country }}
+                  onToken={submitSquare}
+                  onUseCard={() => setPaymentMethod('card')}
+                />
+                {paymentMethod === 'card' && (
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('applePay')}
+                    className="mt-4 w-full text-xs font-semibold underline"
+                  >
+                    Use Apple Pay instead
+                  </button>
+                )}
+              </>
+            )}
+            {!squareQuote && !preparingSquare && (
+              <button
+                type="button"
+                onClick={() => void prepareSquare()}
+                className="mt-5 h-13 w-full rounded-full bg-black text-sm font-bold text-white"
+              >
+                {paymentState === 'failed' ? 'Try payment again' : 'Load secure payment'}
+              </button>
+            )}
+            {paymentState === 'processing' && (
+              <p className="mt-6 flex items-center gap-2 text-sm" role="status">
+                <LoaderCircle className="h-4 w-4 animate-spin" /> Confirming your payment…
+              </p>
+            )}
+            {paymentState === 'timedOut' && (
+              <button
+                type="button"
+                onClick={() => void checkSquare()}
+                disabled={checkingSquare}
+                className="mt-5 h-13 w-full rounded-full bg-black text-sm font-bold text-white"
+              >
+                Check payment status
+              </button>
+            )}
+          </>
+        )}
+        {step === 'review' && deliveryReady && paymentMethod === 'mpesa' && (
           <div className="mt-7 flex items-center gap-3">
             <button
               type="button"
               onClick={back}
-              disabled={paymentState === 'waiting' || paymentState === 'processing'}
-              className="h-13 w-13 grid shrink-0 place-items-center rounded-full border border-black/15 bg-white disabled:opacity-40"
+              disabled={
+                Boolean(orderId) || paymentState === 'waiting' || paymentState === 'processing'
+              }
+              className="grid h-13 w-13 shrink-0 place-items-center rounded-full border border-black/15 bg-white disabled:opacity-40"
               aria-label="Previous checkout step"
             >
               <ArrowLeft className="h-4 w-4" />
@@ -1091,15 +2119,17 @@ function CheckoutSheet() {
               type="button"
               onClick={pay}
               disabled={paymentState === 'waiting' || paymentState === 'processing'}
-              className="h-13 flex flex-1 items-center justify-center gap-2 rounded-full bg-black text-xs font-bold uppercase tracking-[0.14em] text-white transition hover:bg-acid hover:text-black disabled:opacity-50"
+              className="flex h-13 flex-1 items-center justify-center gap-2 rounded-full bg-black text-xs font-bold uppercase tracking-[0.14em] text-white transition hover:bg-acid hover:text-black disabled:opacity-50"
             >
               {paymentState === 'waiting' || paymentState === 'processing'
                 ? 'Waiting for approval'
                 : paymentState === 'timedOut'
                   ? 'Check payment status'
-                  : paymentMethod === 'mpesa'
-                    ? 'Continue with M-Pesa'
-                    : 'Pay securely'}
+                  : paymentState === 'partial'
+                    ? `Pay installment ${paymentProgress?.installmentNumber ?? ''} of ${paymentProgress?.installmentCount ?? ''}`
+                    : paymentMethod === 'mpesa'
+                      ? 'Continue with M-Pesa'
+                      : 'Pay securely'}
             </button>
           </div>
         )}
@@ -1132,7 +2162,7 @@ function Field({
           {label}
         </span>
       )}
-      <span className="h-13 flex items-center rounded-2xl border border-black/15 bg-white px-4 focus-within:border-black focus-within:ring-2 focus-within:ring-acid/70">
+      <span className="flex h-13 items-center rounded-2xl border border-black/15 bg-white px-4 focus-within:border-black focus-within:ring-2 focus-within:ring-acid/70">
         {prefix && (
           <span className="mr-2 border-r border-black/10 pr-2 text-sm font-bold">{prefix}</span>
         )}
@@ -1142,6 +2172,7 @@ function Field({
           onChange={(event) => onChange(event.target.value)}
           placeholder={placeholder}
           autoComplete={autoComplete}
+          name={autoComplete?.split(' ').at(-1)}
           className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-black/30"
         />
       </span>
@@ -1155,21 +2186,25 @@ function PaymentOption({
   icon,
   title,
   detail,
+  disabled = false,
 }: {
   selected: boolean;
   onClick: () => void;
   icon: React.ReactNode;
   title: string;
   detail: string;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       aria-pressed={selected}
       className={cn(
         'flex w-full items-center gap-4 rounded-2xl border-2 bg-white p-4 text-left transition',
-        selected ? 'border-black' : 'border-transparent hover:border-black/15'
+        selected ? 'border-black' : 'border-transparent hover:border-black/15',
+        disabled && 'cursor-not-allowed border-black/10 bg-[#f3f2ee]'
       )}
     >
       <span

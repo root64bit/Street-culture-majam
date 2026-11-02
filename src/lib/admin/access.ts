@@ -1,7 +1,15 @@
 import 'server-only';
 
-import { notFound, redirect } from 'next/navigation';
+import { redirect } from 'next/navigation';
+import { headers } from 'next/headers';
+import { privateAccessUrl } from '@/lib/access-links';
+import { safeAuthRedirect } from '@/lib/auth-redirect';
 import { createClient } from '@/lib/supabase/server';
+
+async function denied(path: string) {
+  const requested = safeAuthRedirect((await headers()).get('x-street-culture-path'));
+  redirect(privateAccessUrl(requested.startsWith('/admin') ? requested : path, 'staff'));
+}
 
 export async function requireCapabilitiesPage(path: string, capabilities: readonly string[]) {
   const supabase = await createClient();
@@ -15,7 +23,9 @@ export async function requireCapabilitiesPage(path: string, capabilities: readon
       supabase.rpc('has_capability', { check_capability: capability })
     )
   );
-  if (checks.some(({ data, error }) => error || !data)) notFound();
+  if (checks.some(({ error }) => error))
+    throw new Error('Access checks are temporarily unavailable.');
+  if (checks.some(({ data }) => !data)) await denied(path);
   return { supabase, user };
 }
 
@@ -44,7 +54,8 @@ export async function requireStaffPage(path: string) {
   } = await supabase.auth.getUser();
   if (!user) redirect(`/auth/sign-in?redirectTo=${encodeURIComponent(path)}`);
   const { data: isStaff, error } = await supabase.rpc('is_staff');
-  if (error || !isStaff) notFound();
+  if (error) throw new Error('Access checks are temporarily unavailable.');
+  if (!isStaff) await denied(path);
   return { supabase, user };
 }
 
@@ -67,7 +78,8 @@ export async function requireAdminPage(path: string) {
   } = await supabase.auth.getUser();
   if (!user) redirect(`/auth/sign-in?redirectTo=${encodeURIComponent(path)}`);
   const { data: isAdmin, error } = await supabase.rpc('is_admin');
-  if (error || !isAdmin) notFound();
+  if (error) throw new Error('Access checks are temporarily unavailable.');
+  if (!isAdmin) await denied(path);
   return { supabase, user };
 }
 

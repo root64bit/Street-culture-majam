@@ -189,7 +189,7 @@ export function ProductEditor({
       if (!product) {
         router.push(`/admin/products/${id}`);
       } else {
-        setSuccess('Draft saved. It is still hidden from shoppers.');
+        setSuccess('Product details saved. Publish available items in Listings when ready.');
         router.refresh();
       }
     } catch (cause) {
@@ -497,7 +497,7 @@ export function ProductEditor({
             disabled={busy || Boolean(product?.active)}
             className="rounded-full bg-black px-8 py-4 text-xs font-bold uppercase tracking-wider text-white hover:bg-[#065f46] disabled:opacity-50"
           >
-            {busy ? 'Saving…' : productId ? 'Save draft' : 'Create draft'}
+            {busy ? 'Saving…' : productId ? 'Save product details' : 'Create draft'}
           </button>
         </form>
         {product && !compact && (

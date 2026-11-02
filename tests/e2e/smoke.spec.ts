@@ -17,7 +17,7 @@ async function addFirstLivePiece(page: Page) {
   await expect(page.getByRole('dialog', { name: 'Your bag · 1' })).toBeVisible();
 }
 
-async function reachReview(page: Page) {
+async function reachReview(page: Page, method: 'mpesa' | 'card' | 'applePay' = 'mpesa') {
   await page.route('**/api/checkout/shipping', async (route) => {
     await route.fulfill({
       json: {
@@ -26,8 +26,11 @@ async function reachReview(page: Page) {
             id: 'a1000000-0000-4000-8000-000000000003',
             code: 'TEST_MAPUTO',
             name: 'Test Maputo delivery',
+            description: 'Test courier service',
             price: 125,
             currency: 'MZN',
+            provider_price: 35,
+            provider_currency: 'ZAR',
             estimated_min_days: 1,
             estimated_max_days: 3,
           },
@@ -46,12 +49,183 @@ async function reachReview(page: Page) {
   await checkout.getByLabel('Phone').fill('841234567');
   await checkout.getByRole('button', { name: 'Continue' }).click();
   await checkout.getByLabel('Address line 1').fill('Rua Teste 12');
+  await checkout.getByLabel('Suburb / local area').fill('Polana');
+  await checkout.getByLabel('Postal code').fill('1100');
   await expect(checkout.getByText('Test Maputo delivery')).toBeVisible();
   await checkout.getByRole('button', { name: 'Continue' }).click();
   await expect(checkout.getByText('M-Pesa', { exact: true })).toBeVisible();
+  if (method !== 'mpesa')
+    await checkout
+      .getByRole('button', { name: method === 'card' ? /^Card/ : /^Apple Pay/ })
+      .click();
   await checkout.getByRole('button', { name: 'Continue' }).click();
   await expect(checkout.getByText('Ready when you are.')).toBeVisible();
 }
+
+async function mockSquareCheckout(page: Page, applePayAvailable = true, mockSdk = true) {
+  if (mockSdk)
+    await page.addInitScript(
+      ({ applePayAvailable }) => {
+        Object.assign(window, {
+          Square: {
+            payments: () => ({
+              card: async () => ({
+                attach: async (element: HTMLElement) => {
+                  element.textContent = 'Secure card fields';
+                },
+                destroy: async () => {},
+                tokenize: async (details: unknown) => {
+                  Object.assign(window, { squareVerification: details });
+                  return { status: 'OK', token: 'mock-card-token' };
+                },
+              }),
+              paymentRequest: (options: unknown) => options,
+              applePay: async () => {
+                if (!applePayAvailable) throw new Error('Not supported');
+                return {
+                  destroy: async () => {},
+                  tokenize: async () => ({ status: 'OK', token: 'mock-apple-token' }),
+                };
+              },
+            }),
+          },
+        });
+      },
+      { applePayAvailable }
+    );
+  await page.route('**/api/checkout/orders', (route) =>
+    route.fulfill({
+      json: {
+        orderId,
+        orderNumber: 'SCSQUARE01',
+        subtotal: 1000,
+        shipping: 125,
+        total: 1125,
+      },
+    })
+  );
+  await page.route('**/api/payments/square/quote', (route) =>
+    route.fulfill({
+      json: {
+        orderId,
+        paymentId,
+        orderNumber: 'SCSQUARE01',
+        totalMzn: 1125,
+        amount: 13.5,
+        amountMinor: 1350,
+        currency: 'GBP',
+        expiresAt: new Date(Date.now() + 900000).toISOString(),
+      },
+    })
+  );
+}
+
+test('Square live SDK loads secure card fields without submitting a charge', async ({ page }) => {
+  test.skip(
+    process.env.SQUARE_LIVE_SDK_CHECK !== 'true',
+    'Explicit, non-charging production SDK check'
+  );
+  await mockSquareCheckout(page, true, false);
+  let chargeRequests = 0;
+  await page.route('**/api/payments/square', (route) => {
+    chargeRequests++;
+    return route.abort();
+  });
+  await reachReview(page, 'card');
+  await expect(page.getByRole('button', { name: 'Pay £13.50', exact: true })).toBeEnabled({
+    timeout: 25000,
+  });
+  expect(await page.locator('iframe').count()).toBeGreaterThan(0);
+  expect(chargeRequests).toBe(0);
+});
+
+test('Square card checkout shows the exact GBP charge and verifies the buyer', async ({ page }) => {
+  await mockSquareCheckout(page);
+  let submitted: Record<string, unknown> | null = null;
+  await page.route('**/api/payments/square', (route) => {
+    submitted = route.request().postDataJSON();
+    return route.fulfill({
+      json: { status: 'PAID', fulfillable: true, orderNumber: 'SCSQUARE01' },
+    });
+  });
+  await reachReview(page, 'card');
+  const checkout = page.getByRole('dialog', { name: 'Secure checkout' });
+  await expect(checkout.getByText('Secure card fields')).toBeVisible();
+  await checkout.getByRole('button', { name: 'Pay £13.50', exact: true }).click();
+  await expect(checkout.getByRole('heading', { name: 'Order confirmed.' })).toBeVisible();
+  expect(submitted).toEqual({
+    order_id: orderId,
+    payment_id: paymentId,
+    source_id: 'mock-card-token',
+  });
+  const verification = await page.evaluate(
+    () => (window as unknown as { squareVerification: unknown }).squareVerification
+  );
+  expect(verification).toMatchObject({
+    amount: '13.50',
+    currencyCode: 'GBP',
+    intent: 'CHARGE',
+    customerInitiated: true,
+    sellerKeyedIn: false,
+  });
+  await expect(checkout.getByText('£13.50', { exact: true })).toBeVisible();
+});
+
+test('Square Apple Pay sends the wallet token and confirms the order', async ({ page }) => {
+  await mockSquareCheckout(page);
+  let token = '';
+  await page.route('**/api/payments/square', (route) => {
+    token = route.request().postDataJSON().source_id;
+    return route.fulfill({
+      json: { status: 'PAID', fulfillable: true, orderNumber: 'SCSQUARE01' },
+    });
+  });
+  await reachReview(page, 'applePay');
+  await page.getByRole('button', { name: 'Pay £13.50 with Apple Pay' }).click();
+  await expect(page.getByRole('heading', { name: 'Order confirmed.' })).toBeVisible();
+  expect(token).toBe('mock-apple-token');
+});
+
+test('Square Apple Pay offers a card fallback on unsupported devices', async ({ page }) => {
+  await mockSquareCheckout(page, false);
+  await reachReview(page, 'applePay');
+  await expect(
+    page.getByText('Apple Pay is unavailable on this device or browser.', { exact: false })
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Pay by card instead' }).click();
+  await expect(page.getByText('Secure card fields')).toBeVisible();
+});
+
+test('Square declines allow retry and uncertain results reconcile without another charge', async ({
+  page,
+}) => {
+  await mockSquareCheckout(page);
+  let charges = 0;
+  await page.route('**/api/payments/square', (route) => {
+    charges++;
+    return charges === 1
+      ? route.fulfill({ status: 402, json: { error: 'The card was declined.' } })
+      : route.fulfill({ status: 202, json: { status: 'PROCESSING' } });
+  });
+  await page.route('**/api/payments/square/status', (route) =>
+    route.fulfill({
+      json: {
+        status: 'PAID',
+        fulfillable: true,
+        orderNumber: 'SCSQUARE01',
+      },
+    })
+  );
+  await reachReview(page, 'card');
+  await page.getByRole('button', { name: 'Pay £13.50', exact: true }).click();
+  await expect(
+    page.getByRole('dialog', { name: 'Secure checkout' }).getByRole('alert')
+  ).toContainText('declined');
+  await page.getByRole('button', { name: 'Try payment again' }).click();
+  await page.getByRole('button', { name: 'Pay £13.50', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Order confirmed.' })).toBeVisible();
+  expect(charges).toBe(2);
+});
 
 test('homepage uses the supplied brand mark and lists real live inventory', async ({ page }) => {
   await page.goto('/');
@@ -233,6 +407,83 @@ test('mocked M-Pesa confirmation shows the order summary without contacting Mine
     'href',
     '/order/SC1234ABCD'
   );
+});
+
+test('M-Pesa totals above 75,000 MZN are confirmed through sequential installments', async ({
+  page,
+}) => {
+  const installmentPaymentIds = [
+    'a1000000-0000-4000-8000-000000000011',
+    'a1000000-0000-4000-8000-000000000012',
+    'a1000000-0000-4000-8000-000000000013',
+  ];
+  let initiationIndex = 0;
+  let statusIndex = 0;
+
+  await page.route('**/api/checkout/orders', (route) =>
+    route.fulfill({
+      json: {
+        orderId,
+        orderNumber: 'SCSPLIT001',
+        subtotal: 159875,
+        shipping: 125,
+        total: 160000,
+      },
+    })
+  );
+  await page.route('**/api/payments/mpesa/initiate', (route) => {
+    const current = initiationIndex++;
+    const paidAmount = current * 75_000;
+    const installmentAmount = current === 2 ? 10_000 : 75_000;
+    return route.fulfill({
+      status: 202,
+      json: {
+        orderId,
+        orderNumber: 'SCSPLIT001',
+        paymentId: installmentPaymentIds[current],
+        status: 'PENDING',
+        paidAmount,
+        remainingAmount: 160_000 - paidAmount,
+        nextInstallmentAmount: installmentAmount,
+        installmentAmount,
+        installmentNumber: current + 1,
+        installmentCount: 3,
+      },
+    });
+  });
+  await page.route('**/api/payments/*/status?*', (route) => {
+    const current = statusIndex++;
+    const paidAmount = current === 0 ? 75_000 : current === 1 ? 150_000 : 160_000;
+    const remainingAmount = 160_000 - paidAmount;
+    return route.fulfill({
+      json: {
+        status: current < 2 ? 'PARTIALLY_PAID' : 'PAID',
+        orderStatus: current < 2 ? 'PENDING' : 'CONFIRMED',
+        orderNumber: 'SCSPLIT001',
+        fulfillable: current === 2,
+        paidAmount,
+        remainingAmount,
+        nextInstallmentAmount: current === 0 ? 75_000 : current === 1 ? 10_000 : 0,
+        installmentNumber: Math.min(current + 2, 3),
+        installmentCount: 3,
+      },
+    });
+  });
+
+  await reachReview(page);
+  const checkout = page.getByRole('dialog', { name: 'Secure checkout' });
+  await checkout.getByRole('button', { name: 'Continue with M-Pesa' }).click();
+  await expect(checkout.getByText('Installment confirmed')).toBeVisible();
+  await expect(checkout.getByText(/75[,.\s]000/).first()).toBeVisible();
+
+  await checkout.getByRole('button', { name: 'Pay installment 2 of 3' }).click();
+  await expect(checkout.getByRole('button', { name: 'Pay installment 3 of 3' })).toBeVisible();
+  await checkout.getByRole('button', { name: 'Pay installment 3 of 3' }).click();
+
+  await expect(checkout.getByRole('heading', { name: 'Order confirmed.' })).toBeVisible();
+  await expect(checkout.getByText('SCSPLIT001')).toBeVisible();
+  expect(initiationIndex).toBe(3);
+  expect(statusIndex).toBe(3);
 });
 
 test('mocked declined payment leaves the customer in checkout with a clear retry', async ({

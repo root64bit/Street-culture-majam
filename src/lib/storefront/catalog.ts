@@ -9,24 +9,26 @@ type ListingRow = {
   asking_price: number | string;
   currency: string;
   published_at: string | null;
-  product: {
-    name: string;
-    slug: string;
-    brand: { name: string } | { name: string }[];
-    category: { slug: string } | { slug: string }[];
-    media: { storage_path: string; sort_order: number }[];
-  } | {
-    name: string;
-    slug: string;
-    brand: { name: string } | { name: string }[];
-    category: { slug: string } | { slug: string }[];
-    media: { storage_path: string; sort_order: number }[];
-  }[];
-  variant: { size: string } | { size: string }[];
+  product:
+    | {
+        name: string;
+        slug: string;
+        brand: { name: string } | { name: string }[];
+        category: { slug: string } | { slug: string }[];
+        media: { storage_path: string; sort_order: number }[];
+      }
+    | {
+        name: string;
+        slug: string;
+        brand: { name: string } | { name: string }[];
+        category: { slug: string } | { slug: string }[];
+        media: { storage_path: string; sort_order: number }[];
+      }[];
+  variant: { size: string; size_system: string } | { size: string; size_system: string }[];
 };
 
 function first<T>(value: T | T[] | null | undefined): T | undefined {
-  return Array.isArray(value) ? value[0] : value ?? undefined;
+  return Array.isArray(value) ? value[0] : (value ?? undefined);
 }
 
 function categoryFromSlug(slug: string): StoreProduct['category'] {
@@ -45,7 +47,7 @@ export async function getLiveStoreListings(): Promise<StoreProduct[]> {
       const { data, error } = await supabase
         .from('listings')
         .select(
-          'id, condition, asking_price, currency, published_at, product:products!inner(name, slug, active, brand:brands!inner(name, active), category:categories!inner(slug), media:product_media(storage_path, sort_order)), variant:product_variants!inner(size)',
+          'id, condition, asking_price, currency, published_at, product:products!inner(name, slug, active, brand:brands!inner(name, active), category:categories!inner(slug), media:product_media(storage_path, sort_order)), variant:product_variants!inner(size,size_system)'
         )
         .eq('status', 'LIVE')
         .eq('currency', 'MZN')
@@ -70,27 +72,35 @@ export async function getLiveStoreListings(): Promise<StoreProduct[]> {
       const category = first(product?.category);
       if (!product || !variant || !brand || !category) return [];
 
-      const media = [...(product.media ?? [])].sort((left, right) => left.sort_order - right.sort_order)[0];
+      const media = [...(product.media ?? [])].sort(
+        (left, right) => left.sort_order - right.sort_order
+      )[0];
       const image = media?.storage_path
         ? media.storage_path.startsWith('http')
           ? media.storage_path
           : supabase.storage.from('product-images').getPublicUrl(media.storage_path).data.publicUrl
         : '/images/street-culture-products.png';
 
-      return [{
-        id: listing.id,
-        listingId: listing.id,
-        name: product.name,
-        slug: product.slug,
-        brand: brand.name,
-        category: categoryFromSlug(category.slug),
-        price: Number(listing.asking_price),
-        condition: listing.condition,
-        sizes: [variant.size],
-        image,
-        imagePosition: '50% 50%',
-        isNew: Boolean(listing.published_at && Date.now() - Date.parse(listing.published_at) < 30 * 24 * 60 * 60 * 1000),
-      }];
+      return [
+        {
+          id: listing.id,
+          listingId: listing.id,
+          name: product.name,
+          slug: product.slug,
+          brand: brand.name,
+          category: categoryFromSlug(category.slug),
+          price: Number(listing.asking_price),
+          condition: listing.condition,
+          sizes: [variant.size],
+          sizeSystem: variant.size_system,
+          image,
+          imagePosition: '50% 50%',
+          isNew: Boolean(
+            listing.published_at &&
+            Date.now() - Date.parse(listing.published_at) < 30 * 24 * 60 * 60 * 1000
+          ),
+        },
+      ];
     });
   } catch {
     // The homepage retains its explicitly labelled preview catalog when the

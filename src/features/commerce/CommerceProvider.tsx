@@ -2,6 +2,8 @@
 
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { StoreProduct } from '@/data/storefront';
+import { sumMoney, moneyMinor } from '@/lib/money';
+import { purchasableOptions } from '@/lib/commerce/purchase-options';
 
 export interface CartLine {
   listingId: string;
@@ -31,6 +33,14 @@ interface CommerceContextValue {
 
 const CommerceContext = createContext<CommerceContextValue | null>(null);
 
+function validCartPrice(price: number) {
+  try {
+    return moneyMinor(price) > 0;
+  } catch {
+    return false;
+  }
+}
+
 export function CommerceProvider({ children }: { children: React.ReactNode }) {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [cartHydrated, setCartHydrated] = useState(false);
@@ -42,17 +52,23 @@ export function CommerceProvider({ children }: { children: React.ReactNode }) {
     try {
       const saved = JSON.parse(localStorage.getItem('sc_cart_v1') ?? '[]') as unknown;
       if (Array.isArray(saved)) {
-        setCart(saved.filter((line): line is CartLine =>
-          Boolean(
-            line && typeof line === 'object' &&
-            typeof line.listingId === 'string' &&
-            typeof line.size === 'string' &&
-            line.quantity === 1 &&
-            line.product && typeof line.product === 'object' &&
-            line.product.listingId === line.listingId &&
-            typeof line.product.price === 'number',
-          ),
-        ));
+        setCart(
+          saved.filter((line): line is CartLine =>
+            Boolean(
+              line &&
+              typeof line === 'object' &&
+              typeof line.listingId === 'string' &&
+              typeof line.size === 'string' &&
+              line.quantity === 1 &&
+              line.product &&
+              typeof line.product === 'object' &&
+              line.product.listingId === line.listingId &&
+              typeof line.product.price === 'number' &&
+              validCartPrice(line.product.price)
+              && purchasableOptions(line.product).some((option) => option.listingId === line.listingId && option.size === line.size)
+            )
+          )
+        );
       }
     } catch {
       // A corrupted browser snapshot is discarded; server checkout still
@@ -68,7 +84,9 @@ export function CommerceProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<CommerceContextValue>(() => {
     const addToCart = (product: StoreProduct, size: string, buyNow = false) => {
-      if (!product.listingId || !product.sizes.includes(size)) return;
+      if (!product.listingId || !product.sizes.includes(size) || !validCartPrice(product.price))
+        return;
+      if (!purchasableOptions(product).some((option) => option.listingId === product.listingId && option.size === size)) return;
       setCart((current) => {
         if (current.some((line) => line.listingId === product.listingId)) return current;
         return [...current, { listingId: product.listingId!, product, size, quantity: 1 }];
@@ -84,7 +102,7 @@ export function CommerceProvider({ children }: { children: React.ReactNode }) {
     return {
       cart,
       cartCount: cart.reduce((sum, line) => sum + line.quantity, 0),
-      subtotal: cart.reduce((sum, line) => sum + line.product.price * line.quantity, 0),
+      subtotal: sumMoney(cart.map((line) => line.product.price)),
       quickBuyProduct,
       cartOpen,
       checkoutOpen,
@@ -100,15 +118,15 @@ export function CommerceProvider({ children }: { children: React.ReactNode }) {
       addToCart,
       removeFromCart: (productId, size) =>
         setCart((current) =>
-          current.filter((line) => !(line.product.id === productId && line.size === size)),
+          current.filter((line) => !(line.product.id === productId && line.size === size))
         ),
       updateQuantity: (productId, size, quantity) =>
         setCart((current) =>
           current.map((line) =>
             line.product.id === productId && line.size === size
               ? { ...line, quantity: Math.min(1, Math.max(1, quantity)) }
-              : line,
-          ),
+              : line
+          )
         ),
       clearCart: () => setCart([]),
     };

@@ -20,13 +20,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   const item = parsed.data;
-  const { data: listingId, error } = await access.supabase.rpc('create_staff_inventory_draft', {
-    target_product_id: id,
-    target_size: item.size,
-    target_size_system: item.sizeSystem,
-    target_condition: item.condition,
-    target_asking_price: item.askingPrice,
-  });
+  const { data: listingId, error } = await access.supabase.rpc(
+    'create_costed_staff_inventory_draft',
+    {
+      target_product_id: id,
+      target_size: item.size,
+      target_size_system: item.sizeSystem,
+      target_condition: item.condition,
+      target_asking_price: item.askingPrice,
+      target_cost: item.costPrice ?? null,
+    }
+  );
+  if (error?.code === '42501')
+    return NextResponse.json(
+      { error: 'Finance permission is required to set a private purchase cost.' },
+      { status: 403 }
+    );
   if (error?.message.includes('Unpublished product draft not found')) {
     return NextResponse.json({ error: 'Unpublished product draft not found.' }, { status: 404 });
   }

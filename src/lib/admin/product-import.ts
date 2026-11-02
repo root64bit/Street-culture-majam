@@ -9,6 +9,7 @@ import {
   type SupportedCurrency,
 } from '@/lib/currency';
 import { slugify } from '@/lib/schemas/admin-catalog.schema';
+import { isFootwearProduct, isPurchasableSize } from '@/lib/product-sizes';
 
 export const productHeaders = [
   'product_reference',
@@ -790,6 +791,9 @@ export async function parseProductImport(buffer: Buffer, context: ImportContext)
         item.data.product_reference.trim().toUpperCase() === reference ||
         item.data.product_reference.trim().toUpperCase() === rawRef.toUpperCase()
     );
+    const footwear = isFootwearProduct(category?.name || rawCategory, name);
+    if (footwear && linkedVariants.length === 0)
+      add('product_reference', 'Shoes require individually recorded sizes and size systems in VARIANTS. ONE_SIZE is not valid for footwear.');
     const effectiveVariants =
       linkedVariants.length > 0
         ? linkedVariants
@@ -818,6 +822,8 @@ export async function parseProductImport(buffer: Buffer, context: ImportContext)
           (rawSizeSys ? enumValue(rawSizeSys, ['US', 'UK', 'EU', 'CM', 'STANDARD']) : null) ??
           'STANDARD';
         const sizeVal = (variant.size ?? '').trim() || 'ONE_SIZE';
+        if (!isPurchasableSize(sizeVal, sizeSystem, footwear))
+          add('product_reference', `VARIANTS row ${item.rowNumber}: enter one actual shoe size with UK, US, EU or CM, not ONE_SIZE or a list of sizes.`);
         const quantity = Number(variant.quantity) || 1;
         const sourcePriceOverride = cleanMoney(variant.price_override, false);
         const priceOverride =

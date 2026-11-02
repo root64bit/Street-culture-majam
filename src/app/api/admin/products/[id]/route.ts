@@ -64,6 +64,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       { status: 409 }
     );
   }
+  if (error?.code === '42501')
+    return NextResponse.json(
+      {
+        error:
+          'Unpublish available listings before editing. Products with active customer reservations cannot be changed.',
+      },
+      { status: 409 }
+    );
   if (error)
     return NextResponse.json({ error: 'Product draft could not be updated.' }, { status: 500 });
   if (!data) return NextResponse.json({ error: 'Draft product not found.' }, { status: 404 });

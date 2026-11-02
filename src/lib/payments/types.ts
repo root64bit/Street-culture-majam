@@ -35,7 +35,18 @@ export class PaymentGatewayUnavailableError extends Error {
 
 export class PaymentOutcomeUnknownError extends Error {
   constructor() {
-    super('Payment request outcome is unknown; check the existing provider reference before retrying.');
+    super(
+      'Payment request outcome is unknown; check the existing provider reference before retrying.'
+    );
     this.name = 'PaymentOutcomeUnknownError';
+  }
+}
+
+export class PaymentStatusUnavailableError extends Error {
+  constructor() {
+    super(
+      'The M-Pesa confirmation service is temporarily unavailable. The payment outcome is not confirmed.'
+    );
+    this.name = 'PaymentStatusUnavailableError';
   }
 }
